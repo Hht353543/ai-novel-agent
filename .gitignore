@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+
+# 环境配置
+.env
+
+# 运行时数据（项目保存 / 压缩缓存，自动生成）
+backend/data/
+
+# 向量数据库（本地生成，可重建）
+backend/vector_db/*
+!backend/vector_db/.gitkeep
+backend/vector_db_test/
+
+# 日志
+logs/
+backend/*.log
+
+# Vite 临时文件（可能包含本机绝对路径）
+*.timestamp-*.mjs
+
+# Node / 前端
+node_modules/
+dist/
+*.local
+
+# 系统文件
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

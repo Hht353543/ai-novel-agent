@@ -1,0 +1,22 @@
+# ============ Web 框架 ============
+fastapi==0.110.3
+uvicorn[standard]==0.29.0
+python-multipart==0.0.9
+
+# ============ Pydantic（与 chromadb 0.4.x / langchain 0.1.x 兼容的 v1 版本） ============
+pydantic==1.10.15
+
+# ============ LangChain ============
+langchain==0.1.16
+langchain-core==0.1.52
+langchain-text-splitters==0.0.2
+
+# ============ 向量数据库 / Embedding ============
+chromadb==0.4.24
+sentence-transformers==2.6.1
+
+# ============ DeepSeek（OpenAI SDK 兼容） ============
+openai>=1.54,<2
+
+# ============ 工具 ============
+python-dotenv==1.0.1
