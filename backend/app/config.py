@@ -38,34 +38,14 @@ class Settings:
         "DEEPSEEK_AUTO_REPAIR_JSON", "true"
     ).lower() in ("1", "true", "yes")
 
-    # ---------- Embedding / 向量库 ----------
-    embedding_model: str = os.getenv(
-        "EMBEDDING_MODEL", "shibing624/text2vec-base-chinese"
-    )
-    # 模型加载策略：offline 时不再联网检查更新（首次构建需先下载模型）
-    embedding_offline: bool = os.getenv("EMBEDDING_OFFLINE", "true").lower() in (
-        "1",
-        "true",
-        "yes",
-    )
-    chroma_persist_dir: Path = Path(
-        os.getenv("CHROMA_PERSIST_DIR", str(BASE_DIR / "vector_db"))
-    )
-    chroma_collection: str = os.getenv("CHROMA_COLLECTION", "novel_knowledge")
-
     # ---------- 知识库 ----------
     knowledge_dir: Path = Path(os.getenv("KNOWLEDGE_DIR", str(BASE_DIR / "knowledge")))
-    # 灵感剧情板块默认不启用（构建索引时可通过 --with-inspiration 打开）
+    # 灵感剧情板块默认不参与生成，开启后随其它板块一起注入
     inspiration_enabled: bool = os.getenv("INSPIRATION_ENABLED", "false").lower() in (
         "1",
         "true",
         "yes",
     )
-    chunk_size: int = int(os.getenv("CHUNK_SIZE", "500"))
-    chunk_overlap: int = int(os.getenv("CHUNK_OVERLAP", "80"))
-    # Markdown 结构化知识（novel_info / rag_chunks）使用更大的切片
-    markdown_chunk_size: int = int(os.getenv("MARKDOWN_CHUNK_SIZE", "1500"))
-    markdown_chunk_overlap: int = int(os.getenv("MARKDOWN_CHUNK_OVERLAP", "200"))
 
     # ---------- 知识库原文读取（按板块直接注入） ----------
     # 每个板块最多注入的字符数（防止整本小说原文撑爆上下文）
@@ -113,11 +93,6 @@ class Settings:
     outline_volume_max: int = int(os.getenv("OUTLINE_VOLUME_MAX", "8"))
     # 解析不出字数规模时的默认总字数
     outline_default_total_words: int = int(os.getenv("OUTLINE_DEFAULT_TOTAL_WORDS", "1000000"))
-
-    # ---------- RAG 检索 ----------
-    retriever_top_k: int = int(os.getenv("RETRIEVER_TOP_K", "4"))
-    # 分组检索时每个板块取几条（保证人物/世界观/剧情/技巧都有覆盖）
-    retriever_per_category: int = int(os.getenv("RETRIEVER_PER_CATEGORY", "2"))
 
     # ---------- 服务 ----------
     app_name: str = os.getenv("APP_NAME", "AI 网文作者 Agent")

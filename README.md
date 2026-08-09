@@ -1,25 +1,54 @@
-# AI 网文作者 Agent（第一阶段）
+# AI 网文作者 Agent
 
-基于 **DeepSeek API + 本地知识库** 的网络小说大纲生成系统。
+基于 **DeepSeek API + 本地知识库** 的网络小说大纲与章节正文生成系统。
 
-用户输入小说创意需求 → 从本地知识库按板块读取参考原文 → 注入 Prompt → 调用 DeepSeek → 生成结构化小说大纲。
+你提供小说创意需求（类型、主题、关键词、字数、其他要求、txt 附件），系统从本地知识库按板块读取参考小说原文注入 Prompt，调用 DeepSeek 生成结构化大纲，并支持按卷生成章节标题、角色卡、可编辑的章节正文（续写 / 从修改处重写），大纲与章节可整体保存、随时调出。
+
+---
 
 ## 功能特性
 
-- 本地知识库按板块直接读取参考小说原文（txt）：世界观 / 剧情大纲 / 人物角色卡 / other
-- 长原文自动截断，可选 DeepSeek 摘要压缩（默认关闭）
-- DeepSeek API 调用（OpenAI SDK 兼容模式，JSON 结构化输出）
-- DeepSeek 输出自动容错：代码块/前后缀剥离、截断 JSON 补全，失败时自动让模型修复一次
-- 生成时按板块注入知识库原文，人物/世界观/剧情设定以用户输入和知识库为第一优先级
-- 完整小说大纲：书名、梗概、世界观、角色、分卷章节计划
-- 章节正文写作：可编辑页面，支持「生成本章」「从文末续写」「从光标处重写」
-- 章节生成自动携带前一章结尾，保证跨章剧情连贯
-- 项目存储：大纲与章节草稿整体保存到后端，下次打开直接调出，可多项目并存
-- Vue3 + Vite + TypeScript 前端，一键生成大纲
-- 未配置 API Key 时自动进入演示模式，返回本地示例大纲，便于先跑通全流程
-- 保留多 Agent 扩展目录（`agents/`，第二阶段实现）
+- **大纲生成**：按用户输入（类型 / 主题 / 关键词 / 字数 / 其他要求 / txt 附件）生成书名、梗概、世界观、角色、分卷计划；
+- **卷章规划**：总章数 = 总字数 ÷ 每章字数（默认 4000），卷数随总章数自动规划（默认 3~8 卷），目录由系统生成，数量严格准确；
+- **章节标题**：按卷分批生成前 10 章的具体标题，或根据已写正文重新生成单章标题；
+- **角色卡**：按卷生成主要人物角色卡，可编辑、随项目保存，章节生成时按角色卡约束角色言行；
+- **章节正文**：首次生成 / 从文末续写 / 从光标处重写；自动携带**前一章结尾**，保证跨章剧情连贯；
+- **知识库驱动**：人物、世界观、剧情设定**以用户输入和知识库文本为第一优先级**，不预设角色类型；
+- **项目存储**：大纲 + 全部章节 + 角色卡作为一个项目保存到后端，多项目并存，下次打开直接调出；
+- **防丢失**：表单、正文、附件实时保存到浏览器本地，刷新不丢；
+- **纯文本生成模式**：不依赖向量库 / Embedding 模型，安装轻量、启动快。
 
-## 项目结构
+## 系统架构
+
+```text
+前端 Vue3 + Vite + TypeScript
+        │  HTTP / JSON
+        ▼
+FastAPI 后端
+  ├─ api/novel.py        大纲 / 章节 / 标题 / 角色卡 / 检索接口
+  ├─ api/projects.py     项目保存 / 列表 / 读取 / 删除
+  ├─ services/           业务编排（大纲、章节、标题、角色卡、项目、知识库压缩）
+  ├─ prompts/            DeepSeek Prompt 模板（大纲、章节、标题、角色卡、压缩）
+  ├─ rag/loader.py       按板块读取知识库 txt
+  └─ llm/deepseek.py     OpenAI 兼容的 DeepSeek 调用 + JSON 容错
+```
+
+生成流程：
+
+```text
+用户输入（表单 + 可选 txt 附件）
+        │
+        ▼
+读取 knowledge/ 板块 txt（世界观 / 剧情大纲 / 人物角色卡 / other）
+        │  按板块截断（默认每文件 2000 字、每板块 8000 字），可选摘要压缩
+        ▼
+拼接 Prompt（用户输入优先 + 知识库参考 + 前一章结尾 + 角色卡）
+        │
+        ▼
+DeepSeek 生成 → JSON/正文容错解析 → 返回前端
+```
+
+## 目录结构
 
 ```text
 ai-novel-agent/
@@ -27,47 +56,47 @@ ai-novel-agent/
 │   ├── app/
 │   │   ├── main.py              # FastAPI 入口
 │   │   ├── config.py            # 配置管理（.env）
-│   │   ├── api/novel.py         # 小说生成 / 检索接口
-│   │   ├── rag/                 # loader / splitter / embedding / vector_store / retriever / build_index
+│   │   ├── api/                 # novel.py / projects.py 路由
+│   │   ├── rag/loader.py        # 知识库板块读取
 │   │   ├── llm/deepseek.py      # DeepSeek 调用封装
-│   │   ├── prompts/novel_prompt.py  # 白金作者 Prompt 模板
-│   │   ├── schemas/novel.py     # Pydantic 请求 / 响应模型
-│   │   └── services/novel_service.py # 业务编排
-│   ├── knowledge/               # 本地小说知识库（世界观 / 剧情大纲 / 人物角色卡 / other）
-│   ├── data/                    # 运行时生成：项目保存、压缩缓存（自动创建，不入库）
+│   │   ├── prompts/             # 各生成环节 Prompt 模板
+│   │   ├── schemas/             # Pydantic 请求 / 响应模型
+│   │   └── services/            # 业务编排
+│   ├── knowledge/               # 本地知识库（世界观 / 剧情大纲 / 人物角色卡 / other）
+│   ├── data/                    # 运行时生成：项目保存、压缩缓存（自动创建）
 │   ├── requirements.txt
 │   └── .env.example
 ├── frontend/                    # Vue3 + Vite + TypeScript
-├── agents/                      # 未来多 Agent 扩展目录（占位）
-├── docker/docker-compose.yml
+├── agents/                      # 第二阶段多 Agent 扩展占位
+├── docker/                      # Dockerfile 与 docker-compose.yml
 └── README.md
 ```
 
-## 环境准备
+## 环境要求
 
-- Python 3.11+
+- Python 3.11+（推荐 3.12）
 - Node.js 18+（推荐 20+）
 - DeepSeek API Key（[platform.deepseek.com](https://platform.deepseek.com)）
 
-本项目不依赖 Embedding 模型即可运行；如需使用旧版向量索引功能
-（`python -m app.rag.build_index`），需联网下载中文 Embedding 模型。
+> 本项目不依赖 Embedding 模型 / 向量数据库，安装体积小。
 
-## 一、安装后端依赖
+## 快速开始
+
+### 1. 安装后端依赖
 
 ```bash
 cd backend
 python -m venv .venv
-# Windows:
+
+# Windows
 .venv\Scripts\activate
-# macOS / Linux:
-# source .venv/bin/activate
+# macOS / Linux
+source .venv/bin/activate
 
 pip install -r requirements.txt
 ```
 
-> 提示：如果 `torch` 安装过慢，可先执行 `pip install torch --index-url https://download.pytorch.org/whl/cpu` 安装 CPU 版，再安装其余依赖。
-
-## 二、配置 DeepSeek API Key
+### 2. 配置 DeepSeek API Key
 
 ```bash
 cd backend
@@ -80,75 +109,23 @@ cp .env.example .env
 DEEPSEEK_API_KEY=sk-xxxxxxxxxxxxxxxx
 ```
 
-> 不配置也可以启动：系统会以「演示模式」返回本地示例大纲。
+> 不配置也可以启动：系统会以「演示模式」返回本地示例内容，便于先跑通全流程。
 
-## 三、准备知识库
+### 3. 准备知识库（可选但推荐）
 
-当前生成流程**直接按板块读取 txt 原文**，不需要构建向量索引。
-只需把参考小说原文放入对应板块目录：
-
-```text
-knowledge/
-├── 世界观/xxx.txt
-├── 剧情大纲/xxx.txt
-├── 人物角色卡/xxx.txt
-└── other/xxx.txt
-```
-
-放入后无需任何命令，重启后端即可生效。
-
-> 旧版向量索引命令 `python -m app.rag.build_index` 仍可用（会构建 ChromaDB），
-> 但当前生成流程已不再依赖它。
-
-### 知识库板块（当前用法：按板块读取参考小说原文）
+把参考小说原文按板块放入 `backend/knowledge/`：
 
 ```text
 knowledge/
-├── 世界观/            参考小说的世界观原文（txt）：力量体系、地图、势力
-├── 剧情大纲/          参考小说的剧情原文（txt）：节奏、爽点、分卷结构
-├── 人物角色卡/        参考小说的人物原文（txt）：性格、关系、成长弧光
-└── other/             其它参考资料（txt）
+├── 世界观/xxx.txt          # 力量体系、地图、势力 → 用于构建新作世界观
+├── 剧情大纲/xxx.txt        # 剧情推进、节奏、爽点 → 用于学习剧情设计
+├── 人物角色卡/xxx.txt      # 人物性格、关系、成长 → 用于人物塑造
+└── other/xxx.txt           # 其它参考
 ```
 
-生成大纲与章节正文时，系统会**按板块直接读取**上述目录中的 txt 原文，
-注入 Prompt 作为参考：世界观板块用于构建新作世界观，剧情大纲板块用于
-学习剧情节奏，人物角色卡板块用于人物塑造，other 作为其它参考。
+放入后**无需任何命令**，重启后端即可生效。
 
-### 长原文压缩
-
-小说原文通常远超上下文预算。**默认关闭压缩，直接按开头截断读取**
-（每文件最多 `KNOWLEDGE_FILE_MAX_CHARS`、每板块最多 `KNOWLEDGE_CATEGORY_MAX_CHARS`），
-避免大文件压缩耗时过长。
-
-如需启用摘要压缩，在 `.env` 设置 `KNOWLEDGE_COMPRESS=true` 后重启后端：
-
-1. 每个板块最多处理 30000 字原文，按 2500 字分块；
-2. 用 DeepSeek 并发压缩每一块为高密度摘要（约 700 字/块，
-   保留人名、地名、势力、能力体系、事件线、伏笔等关键信息）；
-3. 压缩结果注入 Prompt（每板块最多 16000 字符），压缩结果按
-   文件内容哈希缓存到 `backend/data/knowledge_cache/`，首次较慢、之后秒开；
-4. 压缩失败或未配置 API Key 时自动回退为直接截断；
-5. 注意：小说原文过大时首次压缩会非常慢，建议先拆分文件或调小
-   `KNOWLEDGE_COMPRESS_SOURCE_MAX`。
-
-相关配置（`.env`）：`KNOWLEDGE_COMPRESS`、`KNOWLEDGE_COMPRESS_SOURCE_MAX`、
-`KNOWLEDGE_COMPRESS_CHUNK_SIZE`、`KNOWLEDGE_COMPRESS_SUMMARY_MAX`、
-`KNOWLEDGE_COMPRESS_WORKERS`、`KNOWLEDGE_CATEGORY_MAX_CHARS_COMPRESSED`。
-
-### 灵感剧情板块开关
-
-「灵感剧情添加」目录**平时不参与生成**。需要启用时，在 `backend/.env` 中设置
-`INSPIRATION_ENABLED=true` 并重启后端：
-
-```bash
-# backend/.env
-INSPIRATION_ENABLED=true
-```
-
-启用后「灵感剧情添加」板块的 txt 会随其它板块一起读取注入 Prompt，
-按灵感内容要求设计剧情走向；不需要时改为 `false` 并重启即可。
-
-## 四、启动后端
+### 4. 启动后端
 
 ```bash
 cd backend
@@ -160,51 +137,7 @@ uvicorn app.main:app --reload --port 8000
 - 健康检查：<http://localhost:8000/api/health>
 - 接口文档（Swagger UI）：<http://localhost:8000/docs>
 
-主要接口：
-
-| 方法 | 路径 | 说明 |
-| --- | --- | --- |
-| POST | `/api/novel/generate` | 生成小说大纲（RAG 检索 + DeepSeek） |
-| POST | `/api/novel/retrieve` | 仅执行知识库检索，调试 RAG |
-| POST | `/api/novel/chapter/generate` | 生成/续写/重写章节正文 |
-| POST | `/api/novel/character-cards/generate` | 按卷生成角色卡 |
-| POST | `/api/novel/titles/generate` | 生成章节标题（按卷前10章 / 根据正文） |
-| GET | `/api/projects` | 列出已保存的小说项目 |
-| POST | `/api/projects` | 保存（新建/更新）项目：大纲 + 章节 |
-| GET | `/api/projects/{id}` | 读取完整项目 |
-| DELETE | `/api/projects/{id}` | 删除项目 |
-| GET | `/api/health` | 健康检查 |
-
-`/api/novel/generate` 请求示例：
-
-```json
-{
-  "title": "",
-  "genre": "武侠",
-  "theme": "无敌流",
-  "keywords": "系统流,极道流",
-  "requirement": "100万字",
-  "extra_requirements": "风格参考古龙，节奏明快，不要添加感情线和引路长辈"
-}
-```
-
-响应示例：
-
-```json
-{
-  "success": true,
-  "context": [{ "source": "世界观/example.txt", "content": "..." }],
-  "outline": {
-    "title": "...",
-    "summary": "...",
-    "world": "...",
-    "characters": [{ "name": "", "role": "", "description": "" }],
-    "volume_plan": [{ "volume": "", "chapters": [] }]
-  }
-}
-```
-
-## 五、启动前端
+### 5. 启动前端
 
 ```bash
 cd frontend
@@ -212,42 +145,203 @@ npm install
 npm run dev
 ```
 
-打开 <http://localhost:5173>，填写小说类型、主题、关键词、字数规模，点击「生成大纲」即可。
+打开 <http://localhost:5173>。
 
-### 章节写作
+### 一键启动（Windows）
 
-生成大纲后点击「进入章节写作」：
+- `start.bat`：同时启动后端（8000）与前端（5173）
+- `start_backend.bat` / `start_frontend.bat`：分别启动
+- `start_backend_verbose.bat`：前台运行后端，便于查看报错
+- `start_services.ps1` / `stop_services.ps1`：重启 / 停止服务
+- `check_backend.bat`：检查后端健康状态
 
-1. 左侧选择卷与章节；
-2. 「生成本章开头」按大纲生成正文（可先选生成字数）；
-3. 正文区可直接编辑；
-4. 把光标放在修改处，点击「从光标处重写」——光标前内容作为上文，重新生成光标之后的部分；
-5. 「从文末续写」以编辑后的全文为上文，继续追加内容。
+## 配置说明（backend/.env）
 
-### 保存与调出项目
+| 参数 | 默认值 | 说明 |
+| --- | --- | --- |
+| `DEEPSEEK_API_KEY` | 空 | DeepSeek API Key，必填（否则演示模式） |
+| `DEEPSEEK_BASE_URL` | `https://api.deepseek.com/` | API 地址 |
+| `DEEPSEEK_MODEL` | `deepseek-chat` | 模型名；如报“模型不存在”请确认该值 |
+| `DEEPSEEK_TEMPERATURE` | `0.7` | 生成随机性 |
+| `DEEPSEEK_MAX_TOKENS` | `8192` | 输出上限；大纲章节较多时可调大 |
+| `DEEPSEEK_TIMEOUT` | `120` | API 请求超时（秒） |
+| `DEEPSEEK_AUTO_REPAIR_JSON` | `true` | 返回非法 JSON 时自动让模型修复一次 |
+| `KNOWLEDGE_DIR` | `./knowledge` | 知识库根目录 |
+| `KNOWLEDGE_CATEGORY_MAX_CHARS` | `8000` | 每个板块最多注入的字符数（不压缩时） |
+| `KNOWLEDGE_FILE_MAX_CHARS` | `2000` | 单个 txt 文件最多注入的字符数 |
+| `KNOWLEDGE_COMPRESS` | `false` | 是否对长原文做 DeepSeek 摘要压缩（大文件首次很慢，谨慎开启） |
+| `KNOWLEDGE_COMPRESS_SOURCE_MAX` | `30000` | 每个板块最多参与压缩的原文长度 |
+| `KNOWLEDGE_COMPRESS_CHUNK_SIZE` | `2500` | 压缩分块大小 |
+| `KNOWLEDGE_COMPRESS_SUMMARY_MAX` | `700` | 每块摘要目标字数 |
+| `KNOWLEDGE_COMPRESS_WORKERS` | `4` | 压缩并发线程数 |
+| `KNOWLEDGE_CATEGORY_MAX_CHARS_COMPRESSED` | `16000` | 压缩后每板块注入上限 |
+| `INSPIRATION_ENABLED` | `false` | 是否让「灵感剧情添加」板块参与生成 |
+| `OUTLINE_CHAPTER_WORDS` | `4000` | 每章标准字数（总章数 = 总字数 ÷ 此值） |
+| `OUTLINE_CHAPTERS_PER_VOLUME` | `30` | 约每多少章分一卷 |
+| `OUTLINE_VOLUME_MIN` / `OUTLINE_VOLUME_MAX` | `3` / `8` | 卷数上下限 |
+| `OUTLINE_DEFAULT_TOTAL_WORDS` | `1000000` | 解析不出字数时的默认总字数 |
+| `APP_NAME` | `AI 网文作者 Agent` | 应用名 |
+| `CORS_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173` | 允许的前端来源 |
 
-- 「保存项目」：把当前大纲和所有已写章节作为一个整体保存到后端
-  （`backend/data/projects.json`），切换章节、刷新页面、重启浏览器都不会丢；
-- 「打开项目」：列出所有已保存项目，点击即可把对应的大纲和章节一起调出；
-- 大纲生成页也有「保存大纲为项目」按钮，可先保存大纲、稍后再写章节；
-- 打开章节写作页时，会自动恢复上次编辑的项目；删除项目需在项目列表中操作。
+## 知识库使用指南
 
-> 前端开发服务器已将 `/api` 代理到 `http://localhost:8000`，无需额外配置。
+### 板块与作用
 
-## 六、Docker 部署（可选）
+| 板块 | 内容 | 生成时的作用 |
+| --- | --- | --- |
+| `世界观/` | 参考小说的世界观原文 | 构建新作的力量体系、地图、势力与背景 |
+| `剧情大纲/` | 参考小说的剧情原文 | 学习分卷结构、节奏、爽点、悬念伏笔 |
+| `人物角色卡/` | 参考小说的人物原文 | 学习人物塑造方法 |
+| `other/` | 其它参考文本 | 按需吸收 |
+
+### 读取规则
+
+- 只读取 `.txt` 文件；
+- 默认不压缩：每个文件取开头 2000 字、每个板块累计最多 8000 字，超出截断并标注；
+- 需要更多内容时调大 `KNOWLEDGE_FILE_MAX_CHARS` / `KNOWLEDGE_CATEGORY_MAX_CHARS`（注意模型上下文预算）；
+- 长原文压缩为可选功能（`KNOWLEDGE_COMPRESS=true`），压缩结果按文件哈希缓存到 `backend/data/knowledge_cache/`；
+- 「灵感剧情添加」目录平时不参与生成，设置 `INSPIRATION_ENABLED=true` 后随其它板块一起注入。
+
+### 重要原则
+
+人物、世界观、剧情设定**完全以用户输入和知识库文本为第一优先级**：
+模型不会预设“女主”“导师”等角色类型，只设计知识库和输入中明确出现或剧情合理需要的人物。
+
+## 功能使用流程
+
+### 1. 生成大纲
+
+填写：小说类型（默认武侠）、主题（默认无敌流）、关键词（默认系统流,极道流）、字数规模、其他要求，可选上传本地 txt 附件（内容视为最高优先级素材）。
+
+点击「生成大纲」后：
+
+- 系统按字数规划卷章数（例如 100 万字 → 250 章 / 8 卷），目录自动生成；
+- 结果可查看知识库实际注入的内容；
+- 点「保存大纲为项目」把大纲存入后端，或直接「进入章节写作」。
+
+### 2. 生成章节标题
+
+大纲页每个卷有「生成前 10 章标题」按钮：AI 分批生成该卷前 10 章的具体标题并替换编号目录；其余章节保持编号。
+
+### 3. 生成 / 编辑角色卡
+
+章节写作页切换到「角色卡」：
+
+- 选择卷 → 「AI 生成本卷角色卡」；
+- 每张卡可编辑：姓名、定位、年龄、外貌、性格、背景、目标、说话风格、备注；
+- 可手动「添加角色卡」或删除；
+- 角色卡随「保存项目」持久化，生成正文时按卡片约束角色言行。
+
+### 4. 生成章节正文
+
+- 左侧选择卷与章节；
+- 「生成本章开头」：按大纲 + 前一章结尾 + 本卷角色卡 + 知识库生成；
+- 「从文末续写」：以编辑后的全文为上文继续追加；
+- 「从光标处重写」：把光标放在修改处，光标前内容作为上文，重新生成光标后内容并替换；
+- 「根据正文生成标题」：按当前正文重新设计章节标题；
+- 可选手生成字数（300/600/800/1200/2000），可填写其他要求，可上传章节级 txt 附件。
+
+### 5. 保存与调出项目
+
+- 「保存项目」：大纲 + 所有章节 + 角色卡整体保存到 `backend/data/projects.json`；
+- 「打开项目」：列出全部项目，点击整体调出；
+- 打开章节写作页时自动恢复上次项目；
+- 表单、正文、附件实时保存在浏览器本地，刷新不丢。
+
+## API 参考
+
+基础地址：`http://localhost:8000`
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| POST | `/api/novel/generate` | 生成小说大纲 |
+| POST | `/api/novel/chapter/generate` | 生成 / 续写 / 重写章节正文 |
+| POST | `/api/novel/titles/generate` | 生成章节标题（按卷前 10 章 / 根据正文） |
+| POST | `/api/novel/character-cards/generate` | 按卷生成角色卡 |
+| POST | `/api/novel/retrieve` | 查看知识库按板块读取（压缩后）的内容 |
+| GET | `/api/projects` | 列出已保存项目 |
+| POST | `/api/projects` | 保存（新建 / 更新）项目 |
+| GET | `/api/projects/{id}` | 读取完整项目 |
+| DELETE | `/api/projects/{id}` | 删除项目 |
+| GET | `/api/health` | 健康检查 |
+
+### 生成大纲示例
+
+```json
+POST /api/novel/generate
+{
+  "title": "",
+  "genre": "武侠",
+  "theme": "无敌流",
+  "keywords": "系统流,极道流",
+  "requirement": "100万字",
+  "extra_requirements": "节奏明快，不要添加感情线和引路长辈",
+  "attachment_name": "设定.txt",
+  "attachment_text": "主角必须姓沈，金手指是武学熔炉。"
+}
+```
+
+响应中的 `outline` 结构：
+
+```json
+{
+  "title": "拟定的小说书名",
+  "summary": "全书核心梗概",
+  "world": "世界观设定",
+  "characters": [{ "name": "", "role": "", "description": "" }],
+  "volume_plan": [{ "volume": "第一卷", "chapters": ["第一章", "第二章"] }]
+}
+```
+
+## Docker 部署（可选）
 
 ```bash
 cd docker
-cp ../backend/.env.example .env   # 并填入 DEEPSEEK_API_KEY
+cp ../backend/.env.example .env   # 填入 DEEPSEEK_API_KEY
 docker compose up --build
 ```
 
 - 后端：<http://localhost:8000>
 - 前端：<http://localhost:5173>
 
+compose 已挂载 `../backend/knowledge`（知识库）与 `../backend/data`（项目 / 缓存），数据不会因容器重建丢失。
+
+## 常见问题（FAQ）
+
+### 生成时提示“无法连接到 DeepSeek API”
+
+检查网络能否访问 `https://api.deepseek.com`；需要代理时请配置系统代理，或调大 `DEEPSEEK_TIMEOUT`。
+
+### 提示“DeepSeek 返回内容不是合法 JSON”
+
+系统已内置多种容错（代码块剥离、截断补全、自动修复）。仍失败时：调大 `DEEPSEEK_MAX_TOKENS`，或在“其他要求”中让模型精简输出。
+
+### 生成结果还是出现“女主 / 导师”等角色
+
+请确认后端已重启加载最新代码，且知识库中没有相关内容；当前 Prompt 明确禁止预设这些角色类型。
+
+### 知识库放了 txt 但生成时没生效
+
+- 确认文件是 `.txt` 且放在对应板块目录；
+- 确认文件为 UTF-8 编码（GBK 也会自动尝试读取）；
+- 重启后端；
+- 调用 `POST /api/novel/retrieve` 查看实际注入的内容。
+
+### 卷 / 章数量不对
+
+总章数 = 总字数 ÷ `OUTLINE_CHAPTER_WORDS`（默认 4000），由系统程序化生成目录，数量严格准确；调整字数或 `OUTLINE_*` 配置后重启后端。
+
+### 章节之间剧情不连贯
+
+生成正文时会自动携带前一章结尾；请先写 / 生成前一章再生成下一章。
+
+### API Key 会不会泄露
+
+`.env` 已被 `.gitignore` 忽略，不会进入 Git；请勿把真实 Key 提交到仓库。
+
 ## 第二阶段规划：多 Agent 扩展
 
-本项目已预留 `agents/` 目录，未来计划实现：
+`agents/` 已预留，未来计划：
 
 ```text
 agents/
@@ -257,4 +351,8 @@ agents/
 └── reviewer_agent.py    # 质量审校 Agent
 ```
 
-当前版本的 `NovelService` 已作为编排入口设计，第二阶段可将各 Agent 作为独立服务挂入同一编排流程，并复用现有 RAG / LLM 基础设施。
+当前 `NovelService` 等业务服务已按编排入口设计，第二阶段可复用现有 RAG / LLM / 存储基础设施。
+
+## License
+
+本项目仅供学习交流使用，未附带开源许可证；引用或再分发请注明出处并自行承担合规责任。
