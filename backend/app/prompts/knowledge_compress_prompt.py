@@ -30,9 +30,7 @@ def build_compress_prompt(
         category, CATEGORY_COMPRESS_GUIDE["other"]
     )
     target = settings.knowledge_compress_summary_max
-    return f"""{SYSTEM_ROLE}
-
-请把下面的小说原文压缩成一段高密度中文摘要。
+    return f"""请把下面的小说原文压缩成一段高密度中文摘要。
 
 ## 板块
 {category}

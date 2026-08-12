@@ -27,6 +27,9 @@ class NovelProject(BaseModel):
     character_cards: list[CharacterCard] = Field(
         default_factory=list, description="各卷角色卡"
     )
+    memory: str = Field(
+        default="", description="项目级跨章记忆（事件线+角色状态滚动摘要）"
+    )
     created_at: str = Field(default="", description="创建时间 ISO 格式")
     updated_at: str = Field(default="", description="最后保存时间 ISO 格式")
 
@@ -56,6 +59,7 @@ class ProjectSaveRequest(BaseModel):
     character_cards: list[CharacterCard] = Field(default_factory=list)
     # 兼容前端可能多传的字段，忽略即可
     title: str = ""
+    memory: str = Field(default="", description="项目级跨章记忆")
 
     class Config:
         """Pydantic v1 配置：忽略多余字段。"""

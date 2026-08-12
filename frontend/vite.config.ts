@@ -7,7 +7,8 @@ import vue from "@vitejs/plugin-vue";
 export default defineConfig({
   plugins: [vue()],
   server: {
-    host: "0.0.0.0",
+    // 默认只监听本机；Docker 容器内通过 VITE_HOST=0.0.0.0 覆盖
+    host: process.env.VITE_HOST || "127.0.0.1",
     port: 5173,
     proxy: {
       "/api": {

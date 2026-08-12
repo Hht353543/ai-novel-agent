@@ -2,6 +2,7 @@
 
 import logging
 import traceback
+import uuid
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -13,6 +14,10 @@ from openai import APIConnectionError, APIError, APITimeoutError
 from app.api.novel import router as novel_router
 from app.api.projects import router as projects_router
 from app.config import settings
+from app.middleware import (
+    RequestLogMiddleware,
+    RequestSizeLimitMiddleware,
+)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 
@@ -39,6 +44,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(
+    RequestSizeLimitMiddleware,
+    max_bytes=settings.max_request_body_size,
+)
+app.add_middleware(RequestLogMiddleware)
 
 app.include_router(novel_router)
 app.include_router(projects_router)
@@ -68,15 +78,23 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
                 "message": f"DeepSeek API 返回错误：{exc}",
             },
         )
+    request_id = uuid.uuid4().hex
     tb = traceback.format_exc()
-    logging.getLogger(__name__).error("未捕获异常: %s\n%s", exc, tb)
+    logging.getLogger(__name__).error(
+        "未捕获异常 request_id=%s %s %s: %s\n%s",
+        request_id,
+        request.method,
+        request.url.path,
+        exc,
+        tb,
+    )
     return JSONResponse(
         status_code=500,
         content={
             "success": False,
             "status": "error",
-            "message": f"后端处理请求时发生错误：{exc}",
-            "detail": tb[-2000:],  # 截取堆栈尾部，便于快速定位
+            "message": "后端处理请求时发生错误，请稍后重试。如需反馈，请提供请求 ID。",
+            "detail": request_id,
         },
     )
 
@@ -84,10 +102,21 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
 @app.get("/api/health")
 async def health_check() -> dict:
     """健康检查接口。"""
-    return {"status": "ok", "app": settings.app_name}
+    return {
+        "status": "ok",
+        "app": settings.app_name,
+        "llm_available": bool(settings.deepseek_api_key),
+    }
 
 
 if __name__ == "__main__":
+    import os
     import uvicorn
 
-    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)
+    # 默认仅本机可访问；需要局域网访问时设置 ALLOW_LAN=0.0.0.0
+    uvicorn.run(
+        "app.main:app",
+        host=os.getenv("ALLOW_LAN", "127.0.0.1"),
+        port=8000,
+        reload=True,
+    )

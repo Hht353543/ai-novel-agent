@@ -76,7 +76,7 @@
       <button class="write-btn" @click="goWriter">
         进入章节写作（可编辑 / 续写 / 重写）
       </button>
-      <button class="write-btn save-btn" :disabled="savingOutline" @click="saveOutlineProject">
+      <button class="write-btn save-btn" :disabled="savingOutline || !canSaveOutline" @click="saveOutlineProject">
         {{ savingOutline ? "保存中…" : "保存大纲为项目" }}
       </button>
 
@@ -97,7 +97,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref, watch } from "vue";
+import { computed, onMounted, reactive, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import LoadingState from "../components/LoadingState.vue";
 import NovelOutlineCard from "../components/NovelOutlineCard.vue";
@@ -107,7 +107,17 @@ import {
   type NovelGenerateResponse,
 } from "../api/novel";
 import { saveProject } from "../api/project";
-import { safeRemoveItem, safeSetItem } from "../utils/storage";
+import { useAttachment } from "../composables/useAttachment";
+import {
+  FORM_ATTACH_KEY,
+  FORM_KEY,
+  generateProjectKey,
+  LAST_PROJECT_KEY,
+  OUTLINE_KEY,
+  OUTLINE_PROJECT_KEY,
+  safeRemoveItem,
+  safeSetItem,
+} from "../utils/storage";
 
 const router = useRouter();
 const loading = ref(false);
@@ -115,9 +125,12 @@ const savingOutline = ref(false);
 const titlesGenerating = ref<number | null>(null);
 const error = ref("");
 const result = ref<NovelGenerateResponse | null>(null);
-// 用户上传的本地 txt 附件
-const attachment = ref<{ name: string; content: string } | null>(null);
-
+// 只有成功或演示模式的结果允许保存为项目；错误结果不落库，避免伪成功数据入库
+const canSaveOutline = computed(
+  () =>
+    !!result.value &&
+    (result.value.status === "success" || result.value.status === "demo"),
+);
 // 表单默认值（与后端 schema 保持一致）
 const DEFAULT_FORM = {
   title: "",
@@ -129,9 +142,17 @@ const DEFAULT_FORM = {
 };
 
 // 表单实时保存到 localStorage：任何输入刷新后都不会丢
-const FORM_KEY = "novel_form";
-const ATTACH_KEY = "novel_form_attachment";
 const form = reactive({ ...DEFAULT_FORM });
+
+// 用户上传的本地 txt 附件（复用公共逻辑）
+const {
+  attachment,
+  restore: restoreAttachment,
+  onAttachFile,
+  removeAttachment,
+} = useAttachment(() => FORM_ATTACH_KEY, (msg) => {
+  error.value = msg;
+});
 
 watch(
   form,
@@ -152,48 +173,8 @@ onMounted(() => {
     // 本地数据损坏时静默忽略，使用默认值
   }
   // 恢复附件
-  try {
-    const raw = localStorage.getItem(ATTACH_KEY);
-    if (raw) {
-      const saved = JSON.parse(raw) as { name: string; content: string };
-      if (saved && typeof saved.name === "string" && typeof saved.content === "string") {
-        attachment.value = saved;
-      }
-    }
-  } catch {
-    // 忽略损坏的附件数据
-  }
+  restoreAttachment();
 });
-
-/** 读取本地 txt 附件内容 */
-function onAttachFile(event: Event): void {
-  const input = event.target as HTMLInputElement;
-  const file = input.files?.[0];
-  if (!file) return;
-  if (!file.name.toLowerCase().endsWith(".txt")) {
-    error.value = "请选择 .txt 文本文件";
-    return;
-  }
-  const reader = new FileReader();
-  reader.onload = () => {
-    attachment.value = {
-      name: file.name,
-      content: String(reader.result ?? ""),
-    };
-    safeSetItem(ATTACH_KEY, JSON.stringify(attachment.value));
-    error.value = "";
-  };
-  reader.onerror = () => {
-    error.value = "读取附件失败，请重试";
-  };
-  reader.readAsText(file, "utf-8");
-  input.value = "";
-}
-
-function removeAttachment(): void {
-  attachment.value = null;
-  safeRemoveItem(ATTACH_KEY);
-}
 
 async function onGenerate(): Promise<void> {
   if (!form.genre.trim()) {
@@ -212,7 +193,9 @@ async function onGenerate(): Promise<void> {
     });
     // 生成成功即自动备份大纲到本地，刷新页面也不会丢
     if (result.value) {
-      safeSetItem("novel_outline", JSON.stringify(result.value.outline));
+      safeSetItem(OUTLINE_KEY, JSON.stringify(result.value.outline));
+      // 每次成功生成都赋予新的本地项目标识，草稿按标识隔离，避免与旧大纲串数据
+      safeSetItem(OUTLINE_PROJECT_KEY, generateProjectKey());
     }
   } catch (err) {
     error.value = err instanceof Error ? err.message : "生成失败，请检查后端服务";
@@ -224,15 +207,15 @@ async function onGenerate(): Promise<void> {
 /** 保存大纲并进入章节写作页 */
 function goWriter(): void {
   if (!result.value) return;
-  safeSetItem("novel_outline", JSON.stringify(result.value.outline));
+  safeSetItem(OUTLINE_KEY, JSON.stringify(result.value.outline));
   // 新大纲尚未保存为项目：移除旧项目记忆，避免章节页自动恢复旧项目
-  safeRemoveItem("novel_last_project_id");
+  safeRemoveItem(LAST_PROJECT_KEY);
   void router.push({ path: "/writer" });
 }
 
 /** 把大纲保存为后端项目（章节留空），下次打开可直接调出 */
 async function saveOutlineProject(): Promise<void> {
-  if (!result.value) return;
+  if (!result.value || !canSaveOutline.value) return;
   savingOutline.value = true;
   try {
     const saved = await saveProject({
@@ -240,8 +223,9 @@ async function saveOutlineProject(): Promise<void> {
       outline: result.value.outline,
       chapters: [],
       character_cards: [],
+      memory: "",
     });
-    safeSetItem("novel_last_project_id", saved.id);
+    safeSetItem(LAST_PROJECT_KEY, saved.id);
     error.value = "";
     alert(`大纲已保存为项目：《${saved.title}》（可在「章节写作」页打开）`);
   } catch (err) {
@@ -284,7 +268,7 @@ async function onGenerateVolumeTitles(volumeIndex: number): Promise<void> {
     }
     // 同步本地备份，避免刷新丢失
     safeSetItem(
-      "novel_outline",
+      OUTLINE_KEY,
       JSON.stringify(result.value.outline),
     );
     error.value = "";

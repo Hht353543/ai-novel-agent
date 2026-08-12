@@ -1,6 +1,8 @@
 /**
  * 后端接口封装。
  */
+import { request } from "./client";
+import { BASE_URL } from "./client";
 
 /** 生成小说大纲的请求体 */
 export interface NovelGenerateRequest {
@@ -65,9 +67,11 @@ export interface NovelOutline {
 export interface NovelGenerateResponse {
   success: boolean;
   status: "success" | "demo" | "error";
+  demo: boolean;
   message: string;
   context: ContextItem[];
   outline: NovelOutline;
+  raw: Record<string, unknown> | null;
 }
 
 /** 章节正文生成 / 续写 / 重写请求体 */
@@ -92,6 +96,8 @@ export interface ChapterGenerateRequest {
   attachment_name: string;
   /** 上传的本地 txt 附件文本内容（可空） */
   attachment_text: string;
+  /** 项目级跨章记忆（事件线+角色状态滚动摘要，可空） */
+  memory: string;
 }
 
 /** 章节正文生成接口响应 */
@@ -103,6 +109,8 @@ export interface ChapterGenerateResponse {
   content: string;
   /** 上文 + 新生成内容，可直接替换编辑器全文 */
   full_text: string;
+  /** 生成后更新过的项目记忆（未开启记忆时原样返回） */
+  memory: string;
 }
 
 /** 按卷生成角色卡的请求 */
@@ -140,44 +148,17 @@ export interface TitlesGenerateResponse {
   titles: string[];
 }
 
-const BASE_URL = "/api";
-
 /**
  * 调用后端生成小说大纲。
  * @throws Error 网络错误或后端返回错误时抛出
  */
 export async function generateNovel(
-  request: NovelGenerateRequest,
+  payload: NovelGenerateRequest,
 ): Promise<NovelGenerateResponse> {
-  const response = await fetch(`${BASE_URL}/novel/generate`, {
+  return request<NovelGenerateResponse>("/novel/generate", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(request),
+    body: payload,
   });
-
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(`后端请求失败 (${response.status}): ${text.slice(0, 200)}`);
-  }
-
-  return (await response.json()) as NovelGenerateResponse;
-}
-
-/**
- * 仅检索知识库（调试用）。
- */
-export async function retrieveContext(
-  request: NovelGenerateRequest,
-): Promise<{ context: ContextItem[] }> {
-  const response = await fetch(`${BASE_URL}/novel/retrieve`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(request),
-  });
-  if (!response.ok) {
-    throw new Error(`检索失败 (${response.status})`);
-  }
-  return (await response.json()) as { context: ContextItem[] };
 }
 
 /**
@@ -185,20 +166,12 @@ export async function retrieveContext(
  * @throws Error 网络错误或后端返回错误时抛出
  */
 export async function generateChapter(
-  request: ChapterGenerateRequest,
+  payload: ChapterGenerateRequest,
 ): Promise<ChapterGenerateResponse> {
-  const response = await fetch(`${BASE_URL}/novel/chapter/generate`, {
+  return request<ChapterGenerateResponse>("/novel/chapter/generate", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(request),
+    body: payload,
   });
-
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(`后端请求失败 (${response.status}): ${text.slice(0, 200)}`);
-  }
-
-  return (await response.json()) as ChapterGenerateResponse;
 }
 
 /**
@@ -206,23 +179,16 @@ export async function generateChapter(
  * @throws Error 网络错误或后端返回错误时抛出
  */
 export async function generateCharacterCards(
-  request: CharacterCardsGenerateRequest,
+  payload: CharacterCardsGenerateRequest,
 ): Promise<CharacterCardsGenerateResponse> {
-  const response = await fetch(
-    `${BASE_URL}/novel/character-cards/generate`,
+  return request<CharacterCardsGenerateResponse>(
+    "/novel/character-cards/generate",
     {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(request),
+      body: payload,
+      errorLabel: "角色卡生成失败",
     },
   );
-
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(`角色卡生成失败 (${response.status}): ${text.slice(0, 200)}`);
-  }
-
-  return (await response.json()) as CharacterCardsGenerateResponse;
 }
 
 /**
@@ -230,18 +196,121 @@ export async function generateCharacterCards(
  * @throws Error 网络错误或后端返回错误时抛出
  */
 export async function generateTitles(
-  request: TitlesGenerateRequest,
+  payload: TitlesGenerateRequest,
 ): Promise<TitlesGenerateResponse> {
-  const response = await fetch(`${BASE_URL}/novel/titles/generate`, {
+  return request<TitlesGenerateResponse>("/novel/titles/generate", {
+    method: "POST",
+    body: payload,
+    errorLabel: "标题生成失败",
+  });
+}
+
+/** 流式生成章节正文的 SSE 事件回调 */
+export interface StreamChapterHandlers {
+  onDelta(text: string): void;
+  onMeta(meta: {
+    status: "success" | "demo" | "error";
+    message?: string;
+    content_len?: number;
+    memory?: string;
+  }): void;
+}
+
+/** 章节审校请求 */
+export interface ChapterReviewRequest {
+  outline: NovelOutline;
+  chapter_title: string;
+  chapter_text: string;
+  memory: string;
+}
+
+/** 单条审校问题 */
+export interface ReviewIssue {
+  type: string;
+  severity: string;
+  description: string;
+  suggestion: string;
+}
+
+/** 章节审校响应 */
+export interface ChapterReviewResponse {
+  success: boolean;
+  status: "success" | "demo" | "error" | "disabled";
+  message: string;
+  issues: ReviewIssue[];
+}
+
+/**
+ * 调用后端审校章节（一致性/爽点/错字/设定冲突）。
+ * @throws Error 网络错误或后端返回错误时抛出
+ */
+export async function reviewChapter(
+  payload: ChapterReviewRequest,
+): Promise<ChapterReviewResponse> {
+  return request<ChapterReviewResponse>("/novel/chapter/review", {
+    method: "POST",
+    body: payload,
+    errorLabel: "审校失败",
+  });
+}
+
+/**
+ * 调用后端流式生成章节正文（SSE）。
+ * @throws Error 网络错误或响应异常时抛出（调用方可回退到非流式接口）
+ */
+export async function streamChapter(
+  payload: ChapterGenerateRequest,
+  handlers: StreamChapterHandlers,
+): Promise<void> {
+  const response = await fetch(`${BASE_URL}/novel/chapter/stream`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(request),
+    body: JSON.stringify(payload),
   });
-
-  if (!response.ok) {
+  if (!response.ok || !response.body) {
     const text = await response.text().catch(() => "");
-    throw new Error(`标题生成失败 (${response.status}): ${text.slice(0, 200)}`);
+    throw new Error(`流式生成失败 (${response.status}): ${text.slice(0, 200)}`);
   }
 
-  return (await response.json()) as TitlesGenerateResponse;
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let sepIndex: number;
+      while ((sepIndex = buffer.indexOf("\n\n")) !== -1) {
+        const rawEvent = buffer.slice(0, sepIndex);
+        buffer = buffer.slice(sepIndex + 2);
+        const dataLine = rawEvent
+          .split("\n")
+          .find((line) => line.startsWith("data: "));
+        if (!dataLine) continue;
+        try {
+          const data = JSON.parse(dataLine.slice(6)) as {
+            type?: string;
+            text?: string;
+            status?: "success" | "demo" | "error";
+            message?: string;
+            content_len?: number;
+          };
+          if (data.type === "delta" && typeof data.text === "string") {
+            handlers.onDelta(data.text);
+          } else if (data.type === "meta" && data.status) {
+            handlers.onMeta({
+              status: data.status,
+              message: data.message,
+              content_len: data.content_len,
+            });
+          }
+        } catch {
+          // 忽略无法解析的事件
+        }
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
 }

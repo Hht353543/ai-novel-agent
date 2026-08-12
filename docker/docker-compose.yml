@@ -5,7 +5,8 @@ services:
       dockerfile: docker/backend.Dockerfile
     container_name: ai-novel-agent-backend
     ports:
-      - "8000:8000"
+      # 默认仅本机可访问；需要局域网访问时设置 ALLOW_LAN=0.0.0.0
+      - "${ALLOW_LAN:-127.0.0.1}:8000:8000"
     env_file:
       - .env
     volumes:
@@ -19,7 +20,10 @@ services:
       dockerfile: docker/frontend.Dockerfile
     container_name: ai-novel-agent-frontend
     ports:
-      - "5173:5173"
+      - "${ALLOW_LAN:-127.0.0.1}:5173:5173"
+    environment:
+      # 容器内 Vite 需绑定所有接口，才能被宿主机端口映射转发；对外暴露由上面的 ports 控制
+      - VITE_HOST=0.0.0.0
     depends_on:
       - backend
     restart: unless-stopped

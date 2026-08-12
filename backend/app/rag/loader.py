@@ -1,26 +1,23 @@
 """本地知识库文档加载模块。
 
-两种用途：
-1. load_knowledge_files：扫描全部板块（构建向量索引用）；
-2. load_category_files / load_category_context：按板块直接读取
-   txt/md 原文并注入生成 Prompt（当前生成流程使用的方式）。
-
-知识库板块约定（用户提供参考小说原文 txt）：
+按板块读取 txt 原文并注入生成 Prompt（当前生成流程使用的方式）。
+板块约定（用户提供参考小说原文 txt）：
 - 世界观/   ：小说原文，作为新作世界观参考；
 - 剧情大纲/ ：小说原文，作为剧情结构与节奏参考；
 - 人物角色卡/：小说原文，作为人物塑造参考；
 - other/    ：其它参考资料。
-
-「灵感剧情添加」板块默认跳过，仅当灵感开关开启时加载。
 """
 
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from app.config import settings
+from app.rag.cache import KnowledgeCache, directory_fingerprint
 
-# 灵感板块目录名：平时不启用，构建索引时通过 --with-inspiration 打开
-INSPIRATION_DIRNAME = "灵感剧情添加"
+# 文档级内存缓存（进程级）：键 = (板块, 目录指纹)。
+# 与知识库注入结果缓存共用同一开关（knowledge_cache_enabled）；
+# 知识库文件路径/mtime/size 变化后指纹变化，自动重新读取。
+_doc_cache = KnowledgeCache()
 
 
 @dataclass
@@ -29,7 +26,7 @@ class Document:
 
     content: str
     source: str = ""          # 相对 knowledge_dir 的路径，如 world/example.txt
-    category: str = ""        # 一级分类：world / characters / plots / other
+    category: str = ""        # 板块目录名，如 世界观 / 剧情大纲 / 人物角色卡 / other
     metadata: dict = field(default_factory=dict)
 
 
@@ -41,45 +38,6 @@ def _read_text(file_path: Path) -> str:
         except (UnicodeDecodeError, UnicodeError):
             continue
     return file_path.read_text(encoding="utf-8", errors="ignore")
-
-
-def load_knowledge_files(knowledge_dir: Path | None = None) -> list[Document]:
-    """递归加载知识库目录下所有 .txt / .md 文件。
-
-    Args:
-        knowledge_dir: 知识库根目录，默认取配置中的 knowledge_dir。
-
-    Returns:
-        Document 列表，每个元素代表一个文本文件。
-    """
-    root = knowledge_dir or settings.knowledge_dir
-    if not root.exists():
-        raise FileNotFoundError(f"知识库目录不存在: {root}")
-
-    documents: list[Document] = []
-    # 同时支持 txt 与 md（新版知识库为 Markdown 结构）
-    for file_path in sorted(list(root.rglob("*.txt")) + list(root.rglob("*.md"))):
-        rel_path = file_path.relative_to(root)
-        # 灵感板块默认不启用：平时不参与构建与检索
-        if (
-            not settings.inspiration_enabled
-            and INSPIRATION_DIRNAME in rel_path.parts
-        ):
-            continue
-        content = _read_text(file_path).strip()
-        if not content:
-            continue
-        # 相对路径的第一段作为分类（world / characters / plots ...）
-        category = rel_path.parts[0] if len(rel_path.parts) > 1 else "other"
-        documents.append(
-            Document(
-                content=content,
-                source=rel_path.as_posix(),
-                category=category,
-                metadata={"category": category, "format": file_path.suffix.lower()},
-            )
-        )
-    return documents
 
 
 def load_category_files(
@@ -117,54 +75,27 @@ def load_category_files(
     return documents
 
 
-def load_category_context(
-    categories: list[str],
-    per_category_chars: int | None = None,
-    per_file_chars: int | None = None,
-) -> list[dict]:
-    """按板块读取知识库原文，供生成 Prompt 直接使用。
+def load_category_files_cached(
+    category: str,
+    knowledge_dir: Path | None = None,
+    fingerprint: str | None = None,
+) -> list[Document]:
+    """读取板块文档并做进程内缓存（按目录指纹失效）。
 
-    规则：
-    - 按传入的板块顺序读取；
-    - 每个板块累计最多注入 per_category_chars 字符；
-    - 单个文件最多注入 per_file_chars 字符（超出截断并标注）；
-    - 超长原文只取开头部分（小说开头通常包含核心设定）。
+    Args:
+        category: 板块目录名。
+        knowledge_dir: 知识库根目录，默认取配置。
+        fingerprint: 目录指纹；由调用方一次性计算并传入，可避免
+            每次读取重复扫描全部文件（关键字检索逐板块调用时尤其重要）。
 
-    Returns:
-        [{"source": "...", "content": "...", "category": "..."}, ...]
+    缓存关闭（knowledge_cache_enabled=false）时退化为直接读取，行为不变。
     """
-    per_cat = per_category_chars or settings.knowledge_category_max_chars
-    per_file = per_file_chars or settings.knowledge_file_max_chars
-    result: list[dict] = []
-
-    for category in categories:
-        docs = load_category_files(category)
-        if not docs:
-            continue
-        budget = per_cat
-        for doc in docs:
-            content = doc.content
-            if len(content) > per_file:
-                content = content[:per_file] + "\n……（原文过长，已截断）"
-            if len(content) > budget:
-                content = content[:budget] + "\n……（超出板块长度限制，已截断）"
-            if not content.strip():
-                continue
-            result.append(
-                {
-                    "source": doc.source,
-                    "content": content,
-                    "category": category,
-                }
-            )
-            budget -= len(content)
-            if budget <= 0:
-                break
-    return result
-
-
-if __name__ == "__main__":  # 便于单独调试
-    docs = load_knowledge_files()
-    print(f"加载到 {len(docs)} 个文档:")
-    for doc in docs:
-        print(f"  - {doc.source} ({len(doc.content)} 字符)")
+    root = knowledge_dir or settings.knowledge_dir
+    if not settings.knowledge_cache_enabled:
+        return load_category_files(category, root)
+    if fingerprint is None:
+        fingerprint = directory_fingerprint(root)
+    return _doc_cache.get_or_compute(
+        (category, fingerprint),
+        lambda: load_category_files(category, root),
+    )

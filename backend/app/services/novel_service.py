@@ -4,21 +4,25 @@
 """
 
 import logging
-import traceback
 import asyncio
 from typing import Any
 
-from openai import APIConnectionError, APIError, APITimeoutError
-
-from app.llm.deepseek import DeepSeekClient
+from app.llm.call import LLMError, run_llm
+from app.llm.deepseek_provider import DeepSeekProvider
+from app.llm.provider import BaseLLM
+from app.rag.retriever import get_retriever
+from app.services.errors import (
+    llm_error_response,
+    unexpected_error_response,
+)
 from app.prompts.novel_prompt import (
+    SYSTEM_ROLE,
     build_novel_prompt,
     parse_total_words,
     plan_volumes,
 )
 from app.services.knowledge_compress import (
     default_categories,
-    load_compressed_category_context,
 )
 from app.schemas.novel import (
     Character,
@@ -30,26 +34,45 @@ from app.schemas.novel import (
 
 logger = logging.getLogger(__name__)
 
+# RAG 检索器（进程级单例；默认 budget，可用 RAG_RETRIEVER=keyword 切换）
+_retriever = get_retriever()
+
+
+def novel_retrieval_query(request: NovelGenerateRequest) -> str:
+    """把大纲生成请求转换为知识库检索查询文本。"""
+    return " ".join(
+        part
+        for part in [
+            request.genre,
+            request.theme,
+            request.title,
+            request.keywords,
+            request.extra_requirements,
+        ]
+        if part
+    )
+
 
 class NovelService:
     """业务编排层：串联 RAG、Prompt 与 DeepSeek。"""
 
-    def __init__(self):
-        self.llm = DeepSeekClient()
+    def __init__(self, llm: BaseLLM | None = None):
+        self.llm = llm or DeepSeekProvider()
 
     async def generate(self, request: NovelGenerateRequest) -> NovelGenerateResponse:
         """生成小说大纲（异步接口，内部调用为同步实现）。"""
         try:
             # 1. 按板块读取知识库参考小说原文（txt），长文自动摘要压缩
             context = await asyncio.to_thread(
-                load_compressed_category_context,
+                _retriever.retrieve,
+                novel_retrieval_query(request),
                 default_categories(),
             )
 
             # 2. 拼接 Prompt
             prompt = build_novel_prompt(request, context)
 
-            # 3. 调用 DeepSeek（失败时降级为演示大纲并给出明确提示）
+            # 3. 调用 DeepSeek（未配置 Key 时返回演示大纲；失败时返回明确错误，不伪造成功数据）
             try:
                 if not self.llm.available:
                     logger.warning("未配置 DEEPSEEK_API_KEY，返回本地示例大纲（演示模式）")
@@ -57,66 +80,39 @@ class NovelService:
                     return NovelGenerateResponse(
                         success=True,
                         status="demo",
+                        demo=True,
                         message="未配置 DEEPSEEK_API_KEY，当前返回演示大纲。请在 backend/.env 中配置后重启后端。",
                         context=context,
                         outline=parse_outline(demo),
                         raw=demo,
                     )
-                raw = self.llm.generate_json(prompt)
-            except (APIConnectionError, APITimeoutError) as exc:
-                logger.error("DeepSeek 连接失败: %s", exc)
-                return NovelGenerateResponse(
-                    success=True,
-                    status="error",
-                    message="无法连接到 DeepSeek API（网络不通或代理未配置）。请检查网络/代理后重试；当前已返回演示大纲。",
-                    context=context,
-                    outline=parse_outline(ensure_volume_plan(demo_outline(), request.requirement)),
-                    raw=None,
+                raw = await run_llm(
+                    self.llm.generate_json,
+                    prompt,
+                    system_prompt=SYSTEM_ROLE,
                 )
-            except APIError as exc:
-                logger.error("DeepSeek API 错误: %s", exc)
-                return NovelGenerateResponse(
-                    success=True,
-                    status="error",
-                    message=f"DeepSeek API 返回错误：{exc}",
+            except LLMError as exc:
+                return llm_error_response(
+                    NovelGenerateResponse,
+                    logger,
+                    exc,
+                    "大纲生成",
+                    message=_llm_error_message(exc),
                     context=context,
-                    outline=parse_outline(ensure_volume_plan(demo_outline(), request.requirement)),
-                    raw=None,
-                )
-            except ValueError as exc:
-                # JSON 解析失败（含自动修复失败）：给用户可操作的提示
-                logger.error("DeepSeek 输出解析失败: %s", exc)
-                return NovelGenerateResponse(
-                    success=True,
-                    status="error",
-                    message=(
-                        "DeepSeek 返回内容无法解析为 JSON（可能因输出过长被截断）。"
-                        "已尝试自动修复仍未成功；请重试，或在 backend/.env 中调大 "
-                        "DEEPSEEK_MAX_TOKENS 后重启后端。当前已返回演示大纲。"
-                    ),
-                    context=context,
-                    outline=parse_outline(ensure_volume_plan(demo_outline(), request.requirement)),
-                    raw=None,
-                )
-            except Exception as exc:  # noqa: BLE001 - 模型层其它异常
-                logger.error("调用 DeepSeek 时异常: %s", exc)
-                return NovelGenerateResponse(
-                    success=False,
-                    status="error",
-                    message=f"调用 DeepSeek 时发生错误：{exc}",
-                    context=context,
-                    outline=parse_outline(ensure_volume_plan(demo_outline(), request.requirement)),
+                    outline=NovelOutline(),
                     raw=None,
                 )
         except Exception as exc:
             # 任何其它异常（如模型加载失败）也返回结构化错误而不是 500
-            logger.error("生成流程异常: %s\n%s", exc, traceback.format_exc())
-            return NovelGenerateResponse(
-                success=False,
-                status="error",
+            return unexpected_error_response(
+                NovelGenerateResponse,
+                logger,
+                exc,
+                "生成流程",
                 message=f"生成流程内部错误：{exc}",
+                log_traceback=True,
                 context=[],
-                outline=parse_outline(ensure_volume_plan(demo_outline(), request.requirement)),
+                outline=NovelOutline(),
                 raw=None,
             )
 
@@ -133,7 +129,7 @@ class NovelService:
                 status="error",
                 message=f"大纲结构转换失败：{exc}",
                 context=context,
-                outline=parse_outline(ensure_volume_plan(demo_outline(), request.requirement)),
+                outline=NovelOutline(),
                 raw=raw,
             )
         return NovelGenerateResponse(
@@ -174,6 +170,24 @@ def parse_outline(raw: dict[str, Any]) -> NovelOutline:
         characters=characters,
         volume_plan=volumes,
     )
+
+
+def _llm_error_message(exc: LLMError) -> str:
+    """大纲生成的 LLM 错误特化文案（保持历史提示不变）。"""
+    if exc.kind == "connection":
+        return (
+            "无法连接到 DeepSeek API（网络不通或代理未配置）。"
+            "请检查网络/代理后重试。"
+        )
+    if exc.kind == "api":
+        return exc.message
+    if exc.kind == "parse":
+        return (
+            "DeepSeek 返回内容无法解析为 JSON（可能因输出过长被截断）。"
+            "已尝试自动修复仍未成功；请重试，或在 backend/.env 中调大 "
+            "DEEPSEEK_MAX_TOKENS 后重启后端。"
+        )
+    return f"调用 DeepSeek 时发生错误：{exc.message}"
 
 
 def demo_outline() -> dict[str, Any]:

@@ -5,29 +5,14 @@
 """
 
 from app.schemas.character import CharacterCard
-from app.schemas.novel import CharacterCardsGenerateRequest, NovelOutline
+from app.schemas.novel import CharacterCardsGenerateRequest
 
+from app.prompts.outline_formatter import (
+    CARD_CHAPTERS_PER_VOLUME,
+    format_outline_for_chapter,
+)
 
 SYSTEM_ROLE = """你是一名拥有20年经验的网络小说白金作者，擅长塑造有记忆点、不脸谱化的角色。"""
-
-
-def _format_outline(outline: NovelOutline, volume_index: int, volume_label: str) -> str:
-    """把大纲与目标卷格式化为文本。"""
-    characters = "\n".join(
-        f"- {c.name}（{c.role}）：{c.description}" for c in outline.characters
-    ) or "（无）"
-    volumes = []
-    for vi, vol in enumerate(outline.volume_plan):
-        marker = " ← 目标卷" if vi == volume_index else ""
-        chapters = "、".join(vol.chapters[:30])
-        volumes.append(f"第{vi + 1}卷 {vol.volume}{marker}：{chapters}")
-    return (
-        f"【书名】{outline.title or '（未命名）'}\n"
-        f"【全书梗概】{outline.summary or '（无）'}\n"
-        f"【世界观】{outline.world or '（无）'}\n"
-        f"【大纲主要角色】\n{characters}\n"
-        f"【分卷计划】\n" + "\n".join(volumes)
-    )
 
 
 def build_character_card_prompt(
@@ -59,12 +44,15 @@ def build_character_card_prompt(
             "notes 备注（与其他角色的关系、本卷成长线）",
         ]
     )
-    return f"""{SYSTEM_ROLE}
-
-请为小说大纲中的「第 {request.volume_index + 1} 卷 {volume_label}」设计主要人物角色卡。
+    return f"""请为小说大纲中的「第 {request.volume_index + 1} 卷 {volume_label}」设计主要人物角色卡。
 
 ## 小说大纲
-{_format_outline(request.outline, request.volume_index, volume_label)}
+{format_outline_for_chapter(
+    request.outline,
+    request.volume_index,
+    chapters_per_volume=CARD_CHAPTERS_PER_VOLUME,
+    characters_label='大纲主要角色',
+)}
 
 ## 输出要求
 只输出一个合法的 JSON 对象，不要包含任何解释文字、不要使用代码块标记，结构如下：

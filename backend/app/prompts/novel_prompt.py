@@ -7,6 +7,7 @@
 import re
 
 from app.config import settings
+from app.llm.budget import truncate_with_note
 from app.schemas.novel import NovelGenerateRequest
 
 
@@ -15,23 +16,27 @@ SYSTEM_ROLE = """你是一名拥有20年经验的网络小说白金作者，擅�
 
 # 知识库板块 -> 使用指引。模型拿到分组资料后，按此消化而不是照抄。
 CATEGORY_GUIDE = {
-    "世界观": "这些是参考小说的世界观原文：从中吸收力量体系、地图设定、组织势力与背景逻辑，构建新作自洽的世界观；不要照搬原文。",
-    "剧情大纲": "这些是参考小说的剧情原文：学习其分卷结构、节奏推进、爽点设计与悬念伏笔的写法；不要照搬原文。",
-    "人物角色卡": "这些是参考小说的人物原文：学习人物性格、关系、成长弧光与对话风格的塑造方法；不要照搬原文。",
-    "other": "其它参考资料：按需吸收其中合理设定。",
-    "novel_info": "参考起点新书的真实卖点结构：开头钩子、身份设定、金手指与长线悬念如何搭配。",
-    "rag_chunks": "这是从多本作品中提炼的知识切片，包含金手指与力量体系、主线剧情、人物群像、势力地理、爽点模板、写作技巧。优先吸收其中可复用的结构与方法，不要照搬书名和人物。",
-    "主要人物侧写": "参考人物塑造方法：主角性格、配角关系、人物成长弧光，避免脸谱化。",
     "世界观": "参考世界观构建：力量体系、地图设定、组织势力与范围，保证新作世界观自洽。",
     "剧情大纲": "参考剧情结构：分卷规划、节奏要点、爽点设计、悬念伏笔。",
-    "优秀情节": "参考优秀剧情设计：事件钩子、冲突推进、反转方式，并借鉴其文笔描写手法。",
-    "作品借鉴": "参考借鉴要点：剧情设计、文风描写、商业化写法；保持新作剧情连贯与风格统一。",
+    "人物角色卡": "这些是参考小说的人物原文：学习人物性格、关系、成长弧光与对话风格的塑造方法；不要照搬原文。",
     "灵感剧情添加": "用户临时添加的灵感剧情，按其中要求设计剧情走向。",
     "other": "作为背景资料参考，合理吸收其中设定。",
 }
 
 # 附件文本最大注入长度（超出截断，避免撑爆上下文）
 MAX_ATTACHMENT_CHARS = 15000
+# 用户「其他要求」最大注入长度（超出截断，防止粘贴超长文本撑爆上下文）
+MAX_EXTRA_REQUIREMENTS_CHARS = 8000
+
+
+def group_context(context: list[dict]) -> dict[str, list[str]]:
+    """把 RAG 上下文按板块分组，条目格式为「【来源：x】\n内容」。"""
+    grouped: dict[str, list[str]] = {}
+    for item in context:
+        grouped.setdefault(item.get("category", "other"), []).append(
+            f"【来源：{item.get('source', '')}】\n{item.get('content', '')}"
+        )
+    return grouped
 
 
 def format_attachment(name: str, text: str) -> str:
@@ -46,6 +51,14 @@ def format_attachment(name: str, text: str) -> str:
         f"【附件名】{name or '未命名.txt'}\n"
         f"{content}"
     )
+
+
+def format_extra_requirements(text: str) -> str:
+    """把用户额外要求格式化为 Prompt 片段（超长截断并注明）。"""
+    content = (text or "").strip()
+    if not content:
+        return "（无，由你自行把握）"
+    return truncate_with_note(content, MAX_EXTRA_REQUIREMENTS_CHARS, "其他要求过长，已截断")
 
 
 def parse_total_words(requirement: str) -> int:
@@ -148,14 +161,7 @@ def build_novel_prompt(
         可直接发送给 DeepSeek 的完整用户提示词。
     """
     # 按板块分组展示检索结果，并附上「如何使用」指引
-    grouped: dict[str, list[str]] = {}
-    for item in context:
-        category = item.get("category", "other")
-        source = item.get("source", "")
-        content = item.get("content", "")
-        grouped.setdefault(category, []).append(
-            f"【来源：{source}】\n{content}"
-        )
+    grouped = group_context(context)
 
     if grouped:
         context_section = "\n\n".join(
@@ -170,9 +176,7 @@ def build_novel_prompt(
         request.attachment_name, request.attachment_text
     )
 
-    return f"""{SYSTEM_ROLE}
-
-请根据以下需求创作一部网络小说的完整大纲。
+    return f"""请根据以下需求创作一部网络小说的完整大纲。
 
 ## 用户需求
 - 小说标题（可为空，由你拟定）：{request.title or "（未指定）"}
@@ -180,7 +184,7 @@ def build_novel_prompt(
 - 核心主题：{request.theme or "（未指定）"}
 - 关键词：{request.keywords or "（无）"}
 - 字数规模：{request.requirement}
-- 其他要求：{request.extra_requirements or "（无，由你自行把握）"}
+- 其他要求：{format_extra_requirements(request.extra_requirements)}
 
 {attachment_section}
 

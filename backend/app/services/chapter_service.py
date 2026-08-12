@@ -12,32 +12,57 @@
 import logging
 import re
 import asyncio
+from typing import AsyncIterator
 
-from openai import APIConnectionError, APIError, APITimeoutError
-
-from app.llm.deepseek import DeepSeekClient
+from app.config import settings
+from app.llm.call import LLMError, run_llm
+from app.llm.deepseek_provider import DeepSeekProvider
+from app.llm.provider import BaseLLM
+from app.rag.retriever import get_retriever
 from app.prompts.chapter_prompt import SYSTEM_ROLE, build_chapter_prompt
+from app.services.errors import (
+    llm_error_response,
+    unexpected_error_response,
+)
+from app.services.memory_service import update_memory
 from app.services.knowledge_compress import (
     default_categories,
-    load_compressed_category_context,
 )
 from app.schemas.novel import ChapterGenerateRequest, ChapterGenerateResponse
 
 logger = logging.getLogger(__name__)
 
+# RAG 检索器（进程级单例；默认 budget，可用 RAG_RETRIEVER=keyword 切换）
+_retriever = get_retriever()
+
+
+def _chapter_retrieval_query(request: ChapterGenerateRequest) -> str:
+    """把章节生成请求转换为知识库检索查询文本。"""
+    return " ".join(
+        part
+        for part in [
+            request.outline.title,
+            request.outline.summary,
+            request.chapter_title,
+            request.extra_requirements,
+        ]
+        if part
+    )
+
 
 class ChapterService:
     """章节正文生成编排服务。"""
 
-    def __init__(self):
-        self.llm = DeepSeekClient()
+    def __init__(self, llm: BaseLLM | None = None):
+        self.llm = llm or DeepSeekProvider()
 
     async def generate(self, request: ChapterGenerateRequest) -> ChapterGenerateResponse:
         """生成 / 续写 / 重写章节正文。"""
         try:
             # 1. 按板块读取知识库参考小说原文（txt），长文自动摘要压缩
             context = await asyncio.to_thread(
-                load_compressed_category_context,
+                _retriever.retrieve,
+                _chapter_retrieval_query(request),
                 default_categories(),
             )
             prompt = build_chapter_prompt(request, context)
@@ -51,10 +76,12 @@ class ChapterService:
                     message="未配置 DEEPSEEK_API_KEY，当前返回演示正文。",
                     content=content,
                     full_text=request.context_text.rstrip() + "\n\n" + content,
+                    memory=request.memory,
                 )
 
             # 正文生成是纯文本：不使用 JSON 输出模式，并使用正文作者角色
-            raw = self.llm.generate(
+            raw = await run_llm(
+                self.llm.generate,
                 prompt,
                 json_mode=False,
                 system_prompt=SYSTEM_ROLE,
@@ -62,33 +89,132 @@ class ChapterService:
             content = clean_chapter_output(raw)
             if not content:
                 raise ValueError("DeepSeek 返回内容为空")
+            memory = request.memory
+            if settings.memory_enabled:
+                memory = await update_memory(
+                    self.llm,
+                    request.memory,
+                    request.outline,
+                    request.chapter_title or f"第{request.chapter_index + 1}章",
+                    content,
+                )
             return ChapterGenerateResponse(
                 success=True,
                 status="success",
                 content=content,
                 full_text=join_text(request.context_text, content),
+                memory=memory,
             )
-        except (APIConnectionError, APITimeoutError) as exc:
-            logger.error("DeepSeek 连接失败: %s", exc)
-            return ChapterGenerateResponse(
-                success=False,
-                status="error",
-                message=f"无法连接到 DeepSeek API：{exc}",
-            )
-        except APIError as exc:
-            logger.error("DeepSeek API 错误: %s", exc)
-            return ChapterGenerateResponse(
-                success=False,
-                status="error",
-                message=f"DeepSeek API 返回错误：{exc}",
+        except LLMError as exc:
+            return llm_error_response(
+                ChapterGenerateResponse,
+                logger,
+                exc,
+                "章节生成",
             )
         except Exception as exc:  # noqa: BLE001 - 全部转为结构化响应
-            logger.exception("章节生成异常")
-            return ChapterGenerateResponse(
-                success=False,
-                status="error",
-                message=f"章节生成失败：{exc}",
+            return unexpected_error_response(
+                ChapterGenerateResponse,
+                logger,
+                exc,
+                "章节生成",
             )
+
+    async def generate_stream(
+        self,
+        request: ChapterGenerateRequest,
+    ) -> AsyncIterator[dict]:
+        """流式生成章节正文：产出 SSE 事件 dict。
+
+        事件类型：
+        - {"type": "meta", "status": "demo" | "error", "message": ...}
+        - {"type": "delta", "text": ...}
+        - {"type": "meta", "status": "success", "content_len": N}
+        """
+        try:
+            context = await asyncio.to_thread(
+                _retriever.retrieve,
+                _chapter_retrieval_query(request),
+                default_categories(),
+            )
+            prompt = build_chapter_prompt(request, context)
+        except Exception as exc:  # noqa: BLE001 - 流式错误也结构化返回
+            yield {
+                "type": "meta",
+                "status": "error",
+                "message": f"知识库加载失败：{exc}",
+            }
+            return
+
+        if not self.llm.available:
+            content = demo_chapter(request)
+            yield {
+                "type": "meta",
+                "status": "demo",
+                "message": "未配置 DEEPSEEK_API_KEY，当前返回演示正文。",
+                "memory": request.memory,
+            }
+            yield {"type": "delta", "text": content}
+            return
+
+        queue: asyncio.Queue = asyncio.Queue()
+
+        def producer() -> None:
+            try:
+                for piece in self.llm.generate_stream(
+                    prompt,
+                    json_mode=False,
+                    system_prompt=SYSTEM_ROLE,
+                ):
+                    queue.put_nowait(("delta", piece))
+            except Exception as exc:  # noqa: BLE001 - 统一转为流式错误事件
+                queue.put_nowait(("error", str(exc)))
+            finally:
+                queue.put_nowait(("done", None))
+
+        task = asyncio.create_task(asyncio.to_thread(producer))
+        parts: list[str] = []
+        try:
+            while True:
+                kind, value = await queue.get()
+                if kind == "done":
+                    break
+                if kind == "error":
+                    yield {
+                        "type": "meta",
+                        "status": "error",
+                        "message": f"流式生成失败：{value}",
+                    }
+                    return
+                parts.append(value)
+                yield {"type": "delta", "text": value}
+
+            content = clean_chapter_output("".join(parts))
+            if not content:
+                yield {
+                    "type": "meta",
+                    "status": "error",
+                    "message": "DeepSeek 返回内容为空",
+                }
+                return
+            memory = request.memory
+            if settings.memory_enabled:
+                memory = await update_memory(
+                    self.llm,
+                    request.memory,
+                    request.outline,
+                    request.chapter_title or f"第{request.chapter_index + 1}章",
+                    content,
+                )
+            yield {
+                "type": "meta",
+                "status": "success",
+                "content_len": len(content),
+                "memory": memory,
+            }
+        finally:
+            if not task.done():
+                task.cancel()
 
 
 def clean_chapter_output(raw: str) -> str:

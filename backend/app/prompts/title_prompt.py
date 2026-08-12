@@ -5,28 +5,17 @@
 - chapter：根据已写正文，重新生成当前章节的标题。
 """
 
-from app.schemas.novel import NovelOutline, TitlesGenerateRequest
+from app.schemas.novel import TitlesGenerateRequest
 
+from app.prompts.outline_formatter import (
+    TITLE_CHAPTERS_PER_VOLUME,
+    format_outline_for_chapter,
+)
+
+# 单章标题生成时最多携带的正文节选字符数
+TITLE_EXCERPT_MAX_CHARS = 2500
 
 SYSTEM_ROLE = """你是一名拥有20年经验的网络小说白金作者，擅长设计有钩子、有网感的章节标题。"""
-
-
-def _format_outline(outline: NovelOutline) -> str:
-    """把大纲压缩为标题设计所需的上下文。"""
-    characters = "\n".join(
-        f"- {c.name}（{c.role}）：{c.description}" for c in outline.characters
-    ) or "（无）"
-    volumes = []
-    for vi, vol in enumerate(outline.volume_plan):
-        chapters = "、".join(vol.chapters[:10])
-        volumes.append(f"第{vi + 1}卷 {vol.volume}：{chapters}")
-    return (
-        f"【书名】{outline.title or '（未命名）'}\n"
-        f"【全书梗概】{outline.summary or '（无）'}\n"
-        f"【世界观】{outline.world or '（无）'}\n"
-        f"【主要角色】\n{characters}\n"
-        f"【分卷计划】\n" + "\n".join(volumes)
-    )
 
 
 def build_volume_titles_prompt(
@@ -39,12 +28,14 @@ def build_volume_titles_prompt(
         else f"第{request.volume_index + 1}卷"
     )
     existing = "、".join(request.existing_titles[:10]) or "（暂无，全部由你设计）"
-    return f"""{SYSTEM_ROLE}
-
-请为一部网络小说大纲中的「第 {request.volume_index + 1} 卷 {volume_label}」设计**前 10 章**的章节标题。
+    return f"""请为一部网络小说大纲中的「第 {request.volume_index + 1} 卷 {volume_label}」设计**前 10 章**的章节标题。
 
 ## 小说大纲
-{_format_outline(request.outline)}
+{format_outline_for_chapter(
+    request.outline,
+    request.volume_index,
+    chapters_per_volume=TITLE_CHAPTERS_PER_VOLUME,
+)}
 
 ## 本卷已有的标题（用于衔接与避免重复）
 {existing}
@@ -72,10 +63,8 @@ def build_chapter_title_prompt(
     text = request.chapter_text.strip()
     if not text:
         raise ValueError("正文为空，无法生成标题")
-    excerpt = text[:2500]
-    return f"""{SYSTEM_ROLE}
-
-请根据一章小说的正文内容，为这一章重新设计一个章节标题。
+    excerpt = text[:TITLE_EXCERPT_MAX_CHARS]
+    return f"""请根据一章小说的正文内容，为这一章重新设计一个章节标题。
 
 ## 所属信息
 - 书名：{request.outline.title or '（未命名）'}

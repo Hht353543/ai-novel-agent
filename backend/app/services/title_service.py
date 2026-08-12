@@ -7,27 +7,28 @@
 
 import logging
 
-from openai import APIConnectionError, APIError, APITimeoutError
-
-from app.llm.deepseek import DeepSeekClient
+from app.llm.call import LLMError, run_llm
+from app.llm.deepseek_provider import DeepSeekProvider
+from app.llm.provider import BaseLLM
 from app.prompts.title_prompt import (
     SYSTEM_ROLE,
     build_chapter_title_prompt,
     build_volume_titles_prompt,
 )
+from app.services.errors import (
+    llm_error_response,
+    unexpected_error_response,
+)
 from app.schemas.novel import TitlesGenerateRequest, TitlesGenerateResponse
 
 logger = logging.getLogger(__name__)
-
-# 按卷模式一次生成的标题数量（前 10 章）
-VOLUME_TITLE_COUNT = 10
 
 
 class TitleService:
     """章节标题生成编排服务。"""
 
-    def __init__(self):
-        self.llm = DeepSeekClient()
+    def __init__(self, llm: BaseLLM | None = None):
+        self.llm = llm or DeepSeekProvider()
 
     async def generate(self, request: TitlesGenerateRequest) -> TitlesGenerateResponse:
         """生成章节标题（volume=按卷前10章 / chapter=根据正文单章）。"""
@@ -48,7 +49,11 @@ class TitleService:
                 )
 
             # 兼容顶层数组 / {"titles": [...]} / {"title": "..."} 三种输出
-            titles = self.llm.generate_json_array(prompt)
+            titles = await run_llm(
+                self.llm.generate_json_array,
+                prompt,
+                system_prompt=SYSTEM_ROLE,
+            )
             if not titles:
                 raise ValueError("DeepSeek 返回的标题为空")
             return TitlesGenerateResponse(
@@ -56,26 +61,19 @@ class TitleService:
                 status="success",
                 titles=titles,
             )
-        except (APIConnectionError, APITimeoutError) as exc:
-            logger.error("DeepSeek 连接失败: %s", exc)
-            return TitlesGenerateResponse(
-                success=False,
-                status="error",
-                message=f"无法连接到 DeepSeek API：{exc}",
-            )
-        except APIError as exc:
-            logger.error("DeepSeek API 错误: %s", exc)
-            return TitlesGenerateResponse(
-                success=False,
-                status="error",
-                message=f"DeepSeek API 返回错误：{exc}",
+        except LLMError as exc:
+            return llm_error_response(
+                TitlesGenerateResponse,
+                logger,
+                exc,
+                "标题生成",
             )
         except Exception as exc:  # noqa: BLE001 - 全部转为结构化响应
-            logger.exception("标题生成异常")
-            return TitlesGenerateResponse(
-                success=False,
-                status="error",
-                message=f"标题生成失败：{exc}",
+            return unexpected_error_response(
+                TitlesGenerateResponse,
+                logger,
+                exc,
+                "标题生成",
             )
 
 

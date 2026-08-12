@@ -29,10 +29,31 @@ class Settings:
         "DEEPSEEK_BASE_URL", "https://api.deepseek.com/"
     )
     deepseek_model: str = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
+    # 模型降级列表（逗号分隔）：主模型重试失败后按顺序切换
+    deepseek_models: list[str] = [
+        model.strip()
+        for model in os.getenv("DEEPSEEK_MODELS", "").split(",")
+        if model.strip()
+    ]
     deepseek_temperature: float = float(os.getenv("DEEPSEEK_TEMPERATURE", "0.7"))
     deepseek_max_tokens: int = int(os.getenv("DEEPSEEK_MAX_TOKENS", "8192"))
     # API 请求超时（秒）：避免网络异常时请求长时间挂起
     deepseek_timeout: int = int(os.getenv("DEEPSEEK_TIMEOUT", "120"))
+    # 连接阶段超时（秒）：与读取超时分离，快速失败
+    deepseek_connect_timeout: int = int(
+        os.getenv("DEEPSEEK_CONNECT_TIMEOUT", "10")
+    )
+    # 429/5xx 可重试次数（每次重试指数退避）
+    llm_max_retries: int = int(os.getenv("LLM_MAX_RETRIES", "2"))
+    llm_retry_base_delay: float = float(os.getenv("LLM_RETRY_BASE_DELAY", "1.0"))
+    llm_retry_max_delay: float = float(os.getenv("LLM_RETRY_MAX_DELAY", "8.0"))
+    # LLM 成本估算单价（元/1k tokens；0 表示不估算，仅记录用量）
+    llm_cost_per_1k_input: float = float(os.getenv("LLM_COST_PER_1K_INPUT", "0"))
+    llm_cost_per_1k_output: float = float(os.getenv("LLM_COST_PER_1K_OUTPUT", "0"))
+    # 模型上下文窗口（token）：用于计算输入预算，防止超限
+    llm_context_tokens: int = int(os.getenv("LLM_CONTEXT_TOKENS", "65536"))
+    # 输入预算安全余量（token）：留给输出波动与解析开销
+    llm_budget_safety_margin: int = int(os.getenv("LLM_BUDGET_SAFETY_MARGIN", "1024"))
     # 模型返回非法 JSON 时，是否自动让模型修复一次（会多消耗一次 API 调用）
     deepseek_auto_repair_json: bool = os.getenv(
         "DEEPSEEK_AUTO_REPAIR_JSON", "true"
@@ -82,6 +103,36 @@ class Settings:
     knowledge_category_max_chars_compressed: int = int(
         os.getenv("KNOWLEDGE_CATEGORY_MAX_CHARS_COMPRESSED", "16000")
     )
+    # 知识库注入结果的内存缓存开关（默认开启；知识库文件或配置变更后自动失效）
+    knowledge_cache_enabled: bool = os.getenv("KNOWLEDGE_CACHE_ENABLED", "true").lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+    # 知识库所有板块合计最多注入的字符数（防止压缩模式撑爆上下文）
+    knowledge_max_total_chars: int = int(
+        os.getenv("KNOWLEDGE_MAX_TOTAL_CHARS", "40000")
+    )
+    # RAG 检索器：budget（默认，全量注入）或 keyword（轻量关键词检索）
+    rag_retriever: str = os.getenv("RAG_RETRIEVER", "budget").strip().lower()
+    # 关键词检索每板块最多选中的文件数
+    rag_keyword_top_k: int = int(os.getenv("RAG_KEYWORD_TOP_K", "3"))
+    # 章节跨章记忆（滚动摘要）：默认关闭（每次生成会增加一次轻量 LLM 调用）
+    memory_enabled: bool = os.getenv("MEMORY_ENABLED", "false").lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+    # 记忆摘要目标字数
+    memory_summary_max_chars: int = int(
+        os.getenv("MEMORY_SUMMARY_MAX_CHARS", "800")
+    )
+    # 章节审校（Reviewer）开关：默认关闭（每次审校会增加一次 LLM 调用）
+    review_enabled: bool = os.getenv("REVIEW_ENABLED", "false").lower() in (
+        "1",
+        "true",
+        "yes",
+    )
 
     # ---------- 大纲卷章规划 ----------
     # 每章标准字数：总章数 = ceil(总字数 / 每章字数)
@@ -95,6 +146,20 @@ class Settings:
     outline_default_total_words: int = int(os.getenv("OUTLINE_DEFAULT_TOTAL_WORDS", "1000000"))
 
     # ---------- 服务 ----------
+    # 请求体大小上限（字节）：防止超大附件/正文打满内存与磁盘，0 表示不限制
+    max_request_body_size: int = int(
+        os.getenv("MAX_REQUEST_BODY_SIZE", str(10 * 1024 * 1024))
+    )
+    # 项目存储：json（默认，向后兼容）或 sqlite（需先运行迁移脚本）
+    project_storage: str = os.getenv("PROJECT_STORAGE", "json").strip().lower()
+    # 项目 JSON 存储文件
+    projects_file: Path = Path(
+        os.getenv("PROJECTS_FILE", str(BASE_DIR / "data" / "projects.json"))
+    )
+    # 项目 SQLite 存储文件
+    project_db: Path = Path(
+        os.getenv("PROJECT_DB", str(BASE_DIR / "data" / "projects.db"))
+    )
     app_name: str = os.getenv("APP_NAME", "AI 网文作者 Agent")
     cors_origins: list[str] = [
         origin.strip()

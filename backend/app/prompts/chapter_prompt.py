@@ -7,10 +7,15 @@
 - rewrite：以用户修改处之前的内容为上文，重新生成其后内容。
 """
 
-from app.schemas.novel import ChapterGenerateRequest, NovelOutline
+from app.schemas.novel import ChapterGenerateRequest
 
+from app.prompts.outline_formatter import format_outline_for_chapter
 from app.prompts.character_card_prompt import format_character_cards
-from app.prompts.novel_prompt import format_attachment
+from app.prompts.novel_prompt import (
+    format_attachment,
+    format_extra_requirements,
+    group_context,
+)
 
 
 SYSTEM_ROLE = """你是一名拥有20年经验的网络小说白金作者，擅长东方玄幻、仙侠、武侠、都市异能等题材，文笔成熟，节奏感强，能精准延续已有情节并保持人物言行一致。"""
@@ -21,24 +26,6 @@ MODE_GUIDE = {
     "continue": "你拿到的是作者已写好的上文，请从末尾自然衔接，继续向下推进情节，不要重复上文内容。",
     "rewrite": "你拿到的是人工修改后的上文（修改处之前的内容）。请严格以此为基准，重新写出修改处之后的新内容，丢弃任何与上文冲突的旧设定，保证上下文连贯。",
 }
-
-
-def _format_outline(outline: NovelOutline) -> str:
-    """把大纲格式化为模型容易消化的文本。"""
-    characters = "\n".join(
-        f"- {c.name}（{c.role}）：{c.description}" for c in outline.characters
-    ) or "（无）"
-    volumes = []
-    for vi, vol in enumerate(outline.volume_plan):
-        chapters = "、".join(vol.chapters[:20])
-        volumes.append(f"第{vi + 1}卷 {vol.volume}：{chapters}")
-    return (
-        f"【书名】{outline.title or '（未命名）'}\n"
-        f"【全书梗概】{outline.summary or '（无）'}\n"
-        f"【世界观】{outline.world or '（无）'}\n"
-        f"【主要角色】\n{characters}\n"
-        f"【分卷计划】\n" + "\n".join(volumes)
-    )
 
 
 def build_chapter_prompt(
@@ -60,11 +47,7 @@ def build_chapter_prompt(
     chapter_title = request.chapter_title or f"第{request.chapter_index + 1}章"
 
     # 知识库按板块分组
-    grouped: dict[str, list[str]] = {}
-    for item in rag_context:
-        grouped.setdefault(item.get("category", "other"), []).append(
-            f"【来源：{item.get('source', '')}】\n{item.get('content', '')}"
-        )
+    grouped = group_context(rag_context)
     context_section = (
         "\n\n".join(
             f"### 板块：{cat}\n" + "\n\n".join(items)
@@ -94,11 +77,16 @@ def build_chapter_prompt(
     attachment_section = format_attachment(
         request.attachment_name, request.attachment_text
     )
+    memory_section = (
+        f"## 已知剧情记忆（跨章一致性依据，必须严格遵守）\n{request.memory}\n"
+        if request.memory.strip()
+        else ""
+    )
 
     return f"""请为一部网络小说创作章节正文。
 
 ## 小说大纲
-{_format_outline(request.outline)}
+{format_outline_for_chapter(request.outline, request.volume_index)}
 
 ## 当前章节
 - 卷：{volume or "（未分卷）"}
@@ -113,6 +101,8 @@ def build_chapter_prompt(
 {attachment_section}
 
 {previous_block}
+
+{memory_section}
 
 ## 知识库参考资料
 以下是从本地知识库中按板块读取的参考小说原文（txt）：
@@ -133,4 +123,4 @@ def build_chapter_prompt(
    本章开篇先回应/延续上一章的收尾，再推进新事件；禁止出现与前一章矛盾的情节或人物状态；
 5. 场景与对话要具体，避免空泛叙述；保持网文节奏，适当留钩子；
 6. 本次只写到约 {request.target_length} 字为止，自然收在一个小节点上，不要一次性把整章写完；
-7. 额外要求：{request.extra_requirements or "（无，由你自行把握）"}。"""
+7. 额外要求：{format_extra_requirements(request.extra_requirements)}。"""

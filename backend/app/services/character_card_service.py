@@ -6,12 +6,16 @@
 
 import logging
 
-from openai import APIConnectionError, APIError, APITimeoutError
-
-from app.llm.deepseek import DeepSeekClient
+from app.llm.call import LLMError, run_llm
+from app.llm.deepseek_provider import DeepSeekProvider
+from app.llm.provider import BaseLLM
 from app.prompts.character_card_prompt import (
     SYSTEM_ROLE,
     build_character_card_prompt,
+)
+from app.services.errors import (
+    llm_error_response,
+    unexpected_error_response,
 )
 from app.schemas.character import CharacterCard
 from app.schemas.novel import (
@@ -25,8 +29,8 @@ logger = logging.getLogger(__name__)
 class CharacterCardService:
     """角色卡生成编排服务。"""
 
-    def __init__(self):
-        self.llm = DeepSeekClient()
+    def __init__(self, llm: BaseLLM | None = None):
+        self.llm = llm or DeepSeekProvider()
 
     async def generate(
         self, request: CharacterCardsGenerateRequest
@@ -42,7 +46,11 @@ class CharacterCardService:
                     message="未配置 DEEPSEEK_API_KEY，当前返回演示角色卡。",
                     character_cards=demo_cards(request.volume_index),
                 )
-            data = self.llm.generate_json(prompt)
+            data = await run_llm(
+                self.llm.generate_json,
+                prompt,
+                system_prompt=SYSTEM_ROLE,
+            )
             cards = [
                 CharacterCard(**item)
                 for item in (data.get("character_cards") or [])
@@ -55,26 +63,19 @@ class CharacterCardService:
                 status="success",
                 character_cards=cards,
             )
-        except (APIConnectionError, APITimeoutError) as exc:
-            logger.error("DeepSeek 连接失败: %s", exc)
-            return CharacterCardsGenerateResponse(
-                success=False,
-                status="error",
-                message=f"无法连接到 DeepSeek API：{exc}",
-            )
-        except APIError as exc:
-            logger.error("DeepSeek API 错误: %s", exc)
-            return CharacterCardsGenerateResponse(
-                success=False,
-                status="error",
-                message=f"DeepSeek API 返回错误：{exc}",
+        except LLMError as exc:
+            return llm_error_response(
+                CharacterCardsGenerateResponse,
+                logger,
+                exc,
+                "角色卡生成",
             )
         except Exception as exc:  # noqa: BLE001 - 全部转为结构化响应
-            logger.exception("角色卡生成异常")
-            return CharacterCardsGenerateResponse(
-                success=False,
-                status="error",
-                message=f"角色卡生成失败：{exc}",
+            return unexpected_error_response(
+                CharacterCardsGenerateResponse,
+                logger,
+                exc,
+                "角色卡生成",
             )
 
 

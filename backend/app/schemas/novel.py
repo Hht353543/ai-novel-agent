@@ -1,10 +1,16 @@
 """小说生成接口的请求 / 响应数据模型。"""
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
 from app.schemas.character import CharacterCard
+
+
+# 生成类接口统一状态（success=成功 / demo=演示模式 / error=调用失败）
+GenerationStatus = Literal["success", "demo", "error"]
+# 审校接口额外支持 disabled（功能未开启）
+ReviewStatus = Literal["success", "demo", "error", "disabled"]
 
 
 class NovelGenerateRequest(BaseModel):
@@ -26,24 +32,12 @@ class NovelGenerateRequest(BaseModel):
         default="", description="用户上传的本地 txt 附件文本内容（可空）"
     )
 
-    def to_query_text(self) -> str:
-        """将需求转换为 RAG 检索查询文本。"""
-        parts = [self.genre, self.theme]
-        if self.title:
-            parts.append(self.title)
-        if self.keywords:
-            parts.append(self.keywords)
-        if self.extra_requirements:
-            parts.append(self.extra_requirements)
-        return " ".join(parts)
-
-
 class ContextItem(BaseModel):
     """RAG 检索返回的单条上下文。"""
 
     source: str = Field(default="", description="资料来源文件")
     content: str = Field(default="", description="资料内容")
-    category: str = Field(default="", description="资料所属板块（如 rag_chunks/世界观/人物侧写）")
+    category: str = Field(default="", description="资料所属板块（如 世界观/剧情大纲/人物角色卡/other）")
 
 
 class Character(BaseModel):
@@ -80,7 +74,8 @@ class NovelGenerateResponse(BaseModel):
     """生成接口响应：包含大纲与检索上下文。"""
 
     success: bool = True
-    status: str = "success"  # success=成功 / demo=演示模式 / error=调用失败
+    status: GenerationStatus = "success"
+    demo: bool = Field(default=False, description="是否为演示模式结果")
     message: str = ""  # 提示信息（演示模式或错误原因）
     context: list[ContextItem] = Field(default_factory=list, description="RAG 检索到的资料")
     outline: NovelOutline = Field(default_factory=NovelOutline, description="AI 生成的大纲")
@@ -111,7 +106,9 @@ class ChapterGenerateRequest(BaseModel):
     previous_chapter_text: str = Field(
         default="", description="前一章的正文结尾，用于跨章衔接（可空）"
     )
-    mode: str = Field(default="generate", description="generate / continue / rewrite")
+    mode: Literal["generate", "continue", "rewrite"] = Field(
+        default="generate", description="generate / continue / rewrite"
+    )
     target_length: int = Field(default=800, ge=100, le=5000, description="期望生成字数")
     character_cards: list[CharacterCard] = Field(
         default_factory=list,
@@ -125,6 +122,9 @@ class ChapterGenerateRequest(BaseModel):
     )
     attachment_text: str = Field(
         default="", description="用户上传的本地 txt 附件文本内容（可空）"
+    )
+    memory: str = Field(
+        default="", description="项目级跨章记忆（事件线+角色状态滚动摘要，可空）"
     )
 
 
@@ -140,7 +140,7 @@ class CharacterCardsGenerateResponse(BaseModel):
     """按卷生成角色卡的响应。"""
 
     success: bool = True
-    status: str = "success"  # success / demo / error
+    status: GenerationStatus = "success"
     message: str = ""
     character_cards: list[CharacterCard] = Field(default_factory=list)
 
@@ -156,7 +156,9 @@ class TitlesGenerateRequest(BaseModel):
     outline: NovelOutline = Field(default_factory=NovelOutline, description="小说大纲")
     volume_index: int = Field(default=0, description="卷索引（0 起）")
     volume_label: str = Field(default="", description="卷名")
-    mode: str = Field(default="volume", description="volume / chapter")
+    mode: Literal["volume", "chapter"] = Field(
+        default="volume", description="volume / chapter"
+    )
     chapter_index: int = Field(default=0, description="mode=chapter 时当前章索引")
     chapter_text: str = Field(default="", description="mode=chapter 时已写正文")
     existing_titles: list[str] = Field(
@@ -168,7 +170,7 @@ class TitlesGenerateResponse(BaseModel):
     """章节标题生成响应。"""
 
     success: bool = True
-    status: str = "success"  # success / demo / error
+    status: GenerationStatus = "success"
     message: str = ""
     titles: list[str] = Field(
         default_factory=list, description="生成的标题（纯标题，不含序号）"
@@ -179,9 +181,39 @@ class ChapterGenerateResponse(BaseModel):
     """章节正文生成接口响应。"""
 
     success: bool = True
-    status: str = "success"  # success / demo / error
+    status: GenerationStatus = "success"
     message: str = ""
     content: str = Field(default="", description="本次新生成的正文")
     full_text: str = Field(
         default="", description="context_text + content，可直接替换编辑器全文"
     )
+    memory: str = Field(
+        default="", description="生成后更新过的项目记忆（未开启记忆时原样返回）"
+    )
+
+
+class ChapterReviewRequest(BaseModel):
+    """章节审校请求。"""
+
+    outline: NovelOutline = Field(default_factory=NovelOutline)
+    chapter_title: str = Field(default="", description="章节标题")
+    chapter_text: str = Field(default="", description="章节正文")
+    memory: str = Field(default="", description="项目级跨章记忆（可空）")
+
+
+class ReviewIssue(BaseModel):
+    """单条审校问题。"""
+
+    type: str = Field(default="", description="问题类型")
+    severity: str = Field(default="", description="严重程度 high/medium/low")
+    description: str = Field(default="", description="问题描述")
+    suggestion: str = Field(default="", description="修改建议")
+
+
+class ChapterReviewResponse(BaseModel):
+    """章节审校响应。"""
+
+    success: bool = True
+    status: ReviewStatus = "success"
+    message: str = ""
+    issues: list[ReviewIssue] = Field(default_factory=list)
