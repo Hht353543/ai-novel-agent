@@ -244,3 +244,40 @@ def test_pipeline_runs_list(client, monkeypatch):
     r = client.get("/api/agents/runs")
     assert r.status_code == 200
     assert isinstance(r.json(), list)
+
+
+def test_sequence_endpoint_success(client, monkeypatch):
+    llm = ScriptedLLM(
+        json_results=[
+            PLAN,
+            CHARACTER_SYSTEM,
+            REVIEW_PASS,
+            MEMORY_UPDATE,
+            TIMELINE_UPDATE,
+        ],
+        text_results=["第一章正文"],
+    )
+    _patch_orchestrator(monkeypatch, llm)
+    r = client.post(
+        "/api/agents/sequence",
+        json={"genre": "武侠", "requirement": "10万字", "end_chapter": 0},
+    )
+    assert r.status_code == 200
+    d = r.json()
+    assert d["success"] is True
+    assert d["result"]["status"] == "success"
+    assert d["result"]["chapters"][0]["chapter"]["content"] == "第一章正文"
+
+
+def test_sequence_async_returns_run_id(client, monkeypatch):
+    _patch_orchestrator(monkeypatch, MockProvider())
+    run_store._runs.clear()
+    r = client.post(
+        "/api/agents/sequence/async",
+        json={"genre": "武侠", "requirement": "10万字", "end_chapter": 0},
+    )
+    assert r.status_code == 200
+    assert r.json()["status"] == "CREATED"
+    state = run_store.get(r.json()["run_id"])
+    assert state is not None
+    assert state.kind == "sequence"

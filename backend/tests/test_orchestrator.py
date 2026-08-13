@@ -83,7 +83,11 @@ async def test_pipeline_revision_loop_passes_on_second():
     assert len(result.revision_history) == 2
     assert "审校未通过" in llm.text_prompts[1]
     assert "人设冲突" in llm.text_prompts[1]
+    assert "上一稿全文" in llm.text_prompts[1]
+    assert "正文v1" in llm.text_prompts[1]
     assert result.revision_history[1].instructions.startswith("审校未通过")
+    assert result.chapter.attempt == 2
+    assert result.chapter.base_version == 1
 
 
 @sync_test
@@ -111,6 +115,7 @@ async def test_pipeline_max_revisions_returns_best_version():
     # 最高分是第 2 版（70 分），返回该版本
     assert result.chapter.attempt == 2
     assert result.chapter.content == "v2"
+    assert result.chapter.base_version == 1
     assert result.latest_review.score == 70
 
 

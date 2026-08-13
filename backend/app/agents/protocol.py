@@ -264,6 +264,7 @@ class ChapterResult(BaseModel):
     """章节写作结果（WriterAgent 输出）。"""
 
     attempt: int = Field(default=1, description="第几次写作（初始=1）")
+    base_version: int = Field(default=0, description="修订基线版本（0=无基线）")
     content: str = Field(default="", description="本次新生成正文")
     full_text: str = Field(default="", description="context_text + content")
     memory: str = Field(default="", description="生成后记忆")
@@ -274,9 +275,13 @@ class RevisionAttempt(BaseModel):
     """一次审校-修订记录。"""
 
     attempt: int = 0
+    base_version: int = Field(default=0, description="该稿基于的上一版")
     instructions: str = Field(default="", description="审校给出的修改意见")
     content: str = ""
     review: ReviewResult | None = None
+    changes: list[str] = Field(
+        default_factory=list, description="预留：修订变更摘要（Diff 展示用）"
+    )
 
 
 class PipelineResult(BaseModel):
@@ -288,6 +293,7 @@ class PipelineResult(BaseModel):
     message: str = ""
     plan: NovelPlan | None = None
     characters: CharacterSystem | None = None
+    character_states: list[CharacterState] = Field(default_factory=list)
     chapter: ChapterResult | None = None
     latest_review: ReviewResult | None = None
     revision_history: list[RevisionAttempt] = Field(default_factory=list)
@@ -372,6 +378,57 @@ class PipelineRequest(BaseModel):
     )
 
 
+class SequenceRequest(BaseModel):
+    """连续章节创作请求（Planner/Character 只执行一次，逐章写作）。"""
+
+    project_id: str = ""
+    save: bool = Field(default=False, description="是否把结果持久化到项目")
+    title: str = ""
+    genre: str = "武侠"
+    theme: str = "无敌流"
+    keywords: str = "系统流,极道流"
+    requirement: str = "100万字"
+    extra_requirements: str = ""
+    attachment_name: str = ""
+    attachment_text: str = ""
+    start_chapter: int = Field(default=0, ge=0, description="起始章索引（0 起）")
+    end_chapter: int = Field(default=2, ge=0, le=9, description="结束章索引（含）")
+    target_length: int = Field(default=800, ge=100, le=5000)
+    with_review: bool = True
+    max_revisions: int | None = None
+
+
+class ChapterRunResult(BaseModel):
+    """连续序列中单章的执行结果。"""
+
+    chapter_index: int = 0
+    chapter_title: str = ""
+    status: AgentStatus = "success"
+    message: str = ""
+    chapter: ChapterResult | None = None
+    latest_review: ReviewResult | None = None
+    revision_history: list[RevisionAttempt] = Field(default_factory=list)
+    character_state_updates: list[CharacterStateUpdateRecord] = Field(
+        default_factory=list
+    )
+
+
+class SequenceResult(BaseModel):
+    """连续章节创作结果。"""
+
+    run_id: str = ""
+    project_id: str = ""
+    status: AgentStatus = "success"
+    message: str = ""
+    plan: NovelPlan | None = None
+    characters: CharacterSystem | None = None
+    character_states: list[CharacterState] = Field(default_factory=list)
+    chapters: list[ChapterRunResult] = Field(default_factory=list)
+    timeline: list[TimelineEntry] = Field(default_factory=list)
+    memory_facts: list[MemoryFact] = Field(default_factory=list)
+    telemetry: dict[str, Any] = Field(default_factory=dict)
+
+
 # ---------- 端点响应模型 ----------
 
 
@@ -402,6 +459,10 @@ class PipelineAsyncResponse(BaseModel):
     status: str = "CREATED"
 
 
+class SequenceResponse(AgentResponse):
+    result: SequenceResult | None = None
+
+
 __all__ = [
     "AgentStatus",
     "AgentRequest",
@@ -425,10 +486,14 @@ __all__ = [
     "WriterRequest",
     "ReviewRequest",
     "PipelineRequest",
+    "SequenceRequest",
+    "ChapterRunResult",
+    "SequenceResult",
     "PlannerResponse",
     "CharacterResponse",
     "WriterResponse",
     "ReviewerResponse",
     "PipelineResponse",
     "PipelineAsyncResponse",
+    "SequenceResponse",
 ]

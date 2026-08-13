@@ -109,6 +109,7 @@ class WriterAgent(BaseAgent[ChapterResult]):
         attempt = int(ctx.metadata.get("attempt", 1) or 1)
         return ChapterResult(
             attempt=attempt,
+            base_version=ctx.base_version,
             content=content,
             full_text=join_text(ctx.context_text, content),
             memory=ctx.memory,
@@ -139,6 +140,7 @@ class WriterAgent(BaseAgent[ChapterResult]):
         attempt = int(ctx.metadata.get("attempt", 1) or 1)
         return ChapterResult(
             attempt=attempt,
+            base_version=ctx.base_version,
             content=content,
             full_text=join_text(ctx.context_text, content),
             memory=ctx.memory,

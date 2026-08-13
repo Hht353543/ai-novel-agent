@@ -25,6 +25,7 @@ class ChapterDraft(BaseModel):
     chapter_index: int = Field(default=0, description="章索引（0 起）")
     chapter_title: str = Field(default="", description="章节标题")
     content: str = Field(default="", description="章节正文内容")
+    version: int = Field(default=1, description="章节版本（修订次数，预留 Diff/回滚）")
 
 
 class NovelProject(BaseModel):

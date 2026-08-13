@@ -40,6 +40,17 @@ def parse_timeline_update(
     return TimelineUpdate(entries=entries, warnings=warnings)
 
 
+def merge_timelines(
+    existing: list[TimelineEntry],
+    new_entries: list[TimelineEntry],
+) -> list[TimelineEntry]:
+    """按 sequence 合并时间线（新条目优先），保证模型漏掉旧条目时仍能累积。"""
+    by_seq: dict[int, TimelineEntry] = {e.sequence: e for e in existing}
+    for entry in new_entries:
+        by_seq[entry.sequence] = entry
+    return [by_seq[key] for key in sorted(by_seq)]
+
+
 class TimelineAgent(BaseAgent[TimelineUpdate]):
     """时间线 Agent：输出完整时间线与一致性警告。"""
 
@@ -101,6 +112,7 @@ class TimelineAgent(BaseAgent[TimelineUpdate]):
             [e for e in update.entries if e.event.strip()],
             key=lambda e: e.sequence,
         )
+        update.entries = merge_timelines(ctx.timeline, update.entries)
         return update
 
 

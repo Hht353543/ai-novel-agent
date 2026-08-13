@@ -22,6 +22,8 @@ from app.agents.protocol import (
     PlannerResponse,
     ReviewRequest,
     ReviewerResponse,
+    SequenceRequest,
+    SequenceResponse,
     WriterRequest,
     WriterResponse,
 )
@@ -218,6 +220,59 @@ async def pipeline_agent_async(request: PipelineRequest) -> PipelineAsyncRespons
                 error=AgentErrorInfo(
                     agent="pipeline",
                     operation="run_pipeline",
+                    error_type="unknown",
+                    message=str(exc),
+                    run_id=run_id,
+                )
+            )
+
+    asyncio.create_task(_run())
+    return PipelineAsyncResponse(run_id=run_id, status="CREATED")
+
+
+@router.post("/sequence", response_model=SequenceResponse)
+async def sequence_agent(request: SequenceRequest) -> SequenceResponse:
+    """连续章节创作（同步）：规划/人物一次，逐章写作与状态更新。"""
+    run_id = uuid.uuid4().hex
+    run_store.create(run_id, kind="sequence")
+    tracker = RunTracker(run_store, run_id)
+    result = await orchestrator.run_sequence(
+        request,
+        tracker=tracker,
+        run_id=run_id,
+    )
+    return SequenceResponse(
+        success=result.status != "error",
+        status=result.status,
+        agent="pipeline",
+        run_id=result.run_id,
+        message=result.message,
+        result=result,
+        telemetry=result.telemetry,
+    )
+
+
+@router.post("/sequence/async", response_model=PipelineAsyncResponse)
+async def sequence_agent_async(request: SequenceRequest) -> PipelineAsyncResponse:
+    """异步启动连续章节创作，进度通过 GET /runs/{run_id} 获取。"""
+    run_id = uuid.uuid4().hex
+    run_store.create(run_id, kind="sequence")
+    tracker = RunTracker(run_store, run_id)
+
+    async def _run() -> None:
+        try:
+            await orchestrator.run_sequence(
+                request,
+                tracker=tracker,
+                run_id=run_id,
+            )
+        except Exception as exc:  # noqa: BLE001 - 兜底标记失败
+            from app.agents.protocol import AgentErrorInfo
+
+            tracker.finish(
+                error=AgentErrorInfo(
+                    agent="pipeline",
+                    operation="run_sequence",
                     error_type="unknown",
                     message=str(exc),
                     run_id=run_id,

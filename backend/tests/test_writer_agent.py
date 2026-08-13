@@ -10,7 +10,7 @@ from app.llm.mock_provider import MockProvider
 from agents_test_utils import FakeRetriever, PLAN, ScriptedLLM, sync_test
 
 
-def _ctx(llm, revision_instructions=""):
+def _ctx(llm, revision_instructions="", previous_draft="", base_version=0):
     return AgentContext(
         run_id="run-w",
         llm=llm,
@@ -22,6 +22,8 @@ def _ctx(llm, revision_instructions=""):
         context_text="上文内容",
         target_length=800,
         revision_instructions=revision_instructions,
+        previous_draft=previous_draft,
+        base_version=base_version,
     )
 
 
@@ -43,6 +45,25 @@ async def test_writer_revision_instructions_in_prompt():
     await agent.execute(_ctx(llm, revision_instructions="人设冲突，请修正"))
     assert "修订意见" in llm.text_prompts[0]
     assert "人设冲突" in llm.text_prompts[0]
+
+
+@sync_test
+async def test_writer_receives_previous_draft_for_incremental_revision():
+    llm = ScriptedLLM(text_results=["修订后正文"])
+    agent = WriterAgent(llm=llm, retriever=FakeRetriever())
+    await agent.execute(
+        _ctx(
+            llm,
+            revision_instructions="修正对话",
+            previous_draft="上一稿完整正文",
+            base_version=1,
+        )
+    )
+    prompt = llm.text_prompts[0]
+    assert "上一稿全文" in prompt
+    assert "上一稿完整正文" in prompt
+    assert "第 1 版" in prompt
+    assert "修订意见" in prompt
 
 
 @sync_test
