@@ -192,3 +192,107 @@ test("stream failure falls back to non-stream chapter generation", async ({
   await expect(page.locator("textarea.editor")).toHaveValue(CHAPTER_TEXT);
   await expect(page.getByText(/已生成约 \d+ 字/)).toBeVisible();
 });
+
+test("one-click pipeline shows progress and opens writer with result", async ({
+  page,
+}) => {
+  page.on("dialog", (dialog) => dialog.accept());
+
+  await page.route("**/api/agents/pipeline/async", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ run_id: "pr1", status: "CREATED" }),
+    }),
+  );
+
+  await page.route("**/api/agents/runs/pr1", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        run_id: "pr1",
+        kind: "pipeline",
+        status: "COMPLETED",
+        current_agent: "pipeline",
+        message: "",
+        revision_attempts: 0,
+        progress: [
+          { step: "PLANNING", status: "done", agent: "planner", message: "", timestamp: "t" },
+          { step: "CHARACTER_DESIGN", status: "done", agent: "character", message: "", timestamp: "t" },
+          { step: "WRITING", status: "done", agent: "writer", message: "", timestamp: "t" },
+          { step: "REVIEWING", status: "done", agent: "reviewer", message: "", timestamp: "t" },
+          { step: "UPDATING_MEMORY", status: "done", agent: "memory", message: "", timestamp: "t" },
+        ],
+        start_time: "t",
+        end_time: "t",
+        error: null,
+        result: {
+          run_id: "pr1",
+          project_id: "p1",
+          status: "success",
+          message: "",
+          plan: OUTLINE.outline,
+          outline: OUTLINE.outline,
+          chapter: {
+            attempt: 1,
+            content: CHAPTER_TEXT,
+            full_text: CHAPTER_TEXT,
+            memory: "",
+          },
+          latest_review: {
+            passed: true,
+            score: 90,
+            issues: [],
+            summary: "ok",
+            revision_required: false,
+          },
+          revision_history: [],
+          character_state_updates: [],
+          timeline: [],
+          memory_facts: [],
+          telemetry: {},
+        },
+      }),
+    }),
+  );
+
+  const savedProject = {
+    id: "p1",
+    title: "E2E Book",
+    outline: OUTLINE.outline,
+    chapters: [
+      {
+        volume_index: 0,
+        chapter_index: 0,
+        chapter_title: "Chapter 1",
+        content: CHAPTER_TEXT,
+      },
+    ],
+    character_cards: [],
+    memory: "",
+    created_at: "2026-01-01T00:00:00+08:00",
+    updated_at: "2026-01-01T00:00:00+08:00",
+  };
+  await page.route("**/api/projects/p1", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(savedProject),
+    }),
+  );
+
+  await page.goto("/");
+  await page.getByPlaceholder("如：100万字").fill("100000字");
+  await page.getByRole("button", { name: "一键 Pipeline（多 Agent）" }).click();
+
+  await expect(page.getByText("小说创作 Pipeline")).toBeVisible();
+  await expect(page.getByText("大纲规划")).toBeVisible();
+  await expect(page.getByText("已完成")).toBeVisible({ timeout: 5000 });
+  await expect(page.getByText(/最终章节预览/)).toBeVisible();
+  await expect(page.getByText("Reviewer：通过（评分 90）")).toBeVisible();
+
+  await page.getByRole("button", { name: "进入章节写作" }).click();
+  await expect(page).toHaveURL(/\/writer/);
+  await expect(page.locator("textarea.editor")).toHaveValue(CHAPTER_TEXT);
+});

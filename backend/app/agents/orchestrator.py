@@ -221,6 +221,7 @@ class NovelOrchestrator:
                 status=status,
                 message=message,
                 plan=plan,
+                outline=plan.to_outline(),
                 characters=characters,
                 character_states=ctx.character_states,
                 chapter=chapter,
@@ -412,6 +413,7 @@ class NovelOrchestrator:
                     else "部分章节失败，请查看各章状态"
                 ),
                 plan=plan,
+                outline=plan.to_outline(),
                 characters=characters,
                 character_states=ctx.character_states,
                 chapters=chapter_runs,

@@ -59,10 +59,37 @@
       <button class="generate-btn" :disabled="loading" @click="onGenerate">
         {{ loading ? "生成中…" : "生成大纲" }}
       </button>
+      <div class="pipeline-row">
+        <label class="pipeline-count">
+          连续章数
+          <select v-model.number="chapterCount">
+            <option :value="1">1</option>
+            <option :value="2">2</option>
+            <option :value="3">3</option>
+          </select>
+        </label>
+        <button
+          class="pipeline-btn"
+          :disabled="loading || showPipeline"
+          @click="startPipeline"
+        >
+          {{ showPipeline ? "Pipeline 运行中…" : "一键 Pipeline（多 Agent）" }}
+        </button>
+      </div>
       <p v-if="error" class="error">{{ error }}</p>
     </section>
 
     <LoadingState v-if="loading" />
+
+    <PipelinePanel
+      v-if="showPipeline"
+      ref="pipelinePanel"
+      :payload="pipelinePayload"
+      :chapter-count="chapterCount"
+      @completed="onPipelineCompleted"
+      @enter-writer="enterPipelineWriter"
+      @close="showPipeline = false"
+    />
 
     <section v-else-if="result" class="panel result-panel">
       <div v-if="result.status !== 'success'" class="notice" :class="result.status">
@@ -97,10 +124,11 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from "vue";
+import { computed, nextTick, onMounted, reactive, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import LoadingState from "../components/LoadingState.vue";
 import NovelOutlineCard from "../components/NovelOutlineCard.vue";
+import PipelinePanel from "../components/PipelinePanel.vue";
 import {
   generateTitles,
   generateNovel,
@@ -108,6 +136,7 @@ import {
 } from "../api/novel";
 import { saveProject } from "../api/project";
 import { useAttachment } from "../composables/useAttachment";
+import type { PipelinePayload, ReviewResultPayload } from "../api/agents";
 import {
   FORM_ATTACH_KEY,
   FORM_KEY,
@@ -123,8 +152,30 @@ const router = useRouter();
 const loading = ref(false);
 const savingOutline = ref(false);
 const titlesGenerating = ref<number | null>(null);
+const showPipeline = ref(false);
+const chapterCount = ref(1);
+const pipelinePanel = ref<InstanceType<typeof PipelinePanel> | null>(null);
+const pipelineResult = ref<{
+  outline: unknown;
+  projectId: string;
+  content: string;
+  status: string;
+  review: ReviewResultPayload | null;
+} | null>(null);
 const error = ref("");
 const result = ref<NovelGenerateResponse | null>(null);
+const pipelinePayload = computed<PipelinePayload>(() => ({
+  title: form.title,
+  genre: form.genre,
+  theme: form.theme,
+  keywords: form.keywords,
+  requirement: form.requirement,
+  extra_requirements: form.extra_requirements,
+  attachment_name: attachment.value?.name ?? "",
+  attachment_text: attachment.value?.content ?? "",
+  target_length: 800,
+  with_review: true,
+}));
 // 只有成功或演示模式的结果允许保存为项目；错误结果不落库，避免伪成功数据入库
 const canSaveOutline = computed(
   () =>
@@ -202,6 +253,48 @@ async function onGenerate(): Promise<void> {
   } finally {
     loading.value = false;
   }
+}
+
+/** 启动多 Agent Pipeline（单章或连续多章） */
+async function startPipeline(): Promise<void> {
+  if (!form.genre.trim()) {
+    error.value = "请至少填写小说类型";
+    return;
+  }
+  error.value = "";
+  pipelineResult.value = null;
+  showPipeline.value = true;
+  await nextTick();
+  void pipelinePanel.value?.start();
+}
+
+/** Pipeline 完成：保存大纲与项目标识，供写作页调出 */
+function onPipelineCompleted(payload: {
+  outline: unknown;
+  projectId: string;
+  content: string;
+  status: string;
+  review: ReviewResultPayload | null;
+}): void {
+  pipelineResult.value = payload;
+  if (payload.outline) {
+    safeSetItem(OUTLINE_KEY, JSON.stringify(payload.outline));
+  }
+  if (payload.projectId) {
+    safeSetItem(LAST_PROJECT_KEY, payload.projectId);
+  }
+}
+
+/** 进入章节写作（Pipeline 已保存项目，写作页会直接调出） */
+function enterPipelineWriter(): void {
+  if (!pipelineResult.value) return;
+  if (pipelineResult.value.outline) {
+    safeSetItem(OUTLINE_KEY, JSON.stringify(pipelineResult.value.outline));
+  }
+  if (pipelineResult.value.projectId) {
+    safeSetItem(LAST_PROJECT_KEY, pipelineResult.value.projectId);
+  }
+  void router.push({ path: "/writer" });
 }
 
 /** 保存大纲并进入章节写作页 */
@@ -360,6 +453,51 @@ textarea {
 }
 
 .generate-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.pipeline-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.pipeline-count {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: #9aa3b5;
+}
+
+.pipeline-count select {
+  background: #0f1220;
+  border: 1px solid #2b3150;
+  border-radius: 8px;
+  color: #e8eaf0;
+  padding: 8px 10px;
+  font-size: 13px;
+}
+
+.pipeline-btn {
+  flex: 1;
+  padding: 12px;
+  border: 1px solid #b388ff;
+  border-radius: 10px;
+  background: rgba(179, 136, 255, 0.12);
+  color: #c9a6ff;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.pipeline-btn:hover:not(:disabled) {
+  background: rgba(179, 136, 255, 0.22);
+}
+
+.pipeline-btn:disabled {
   opacity: 0.6;
   cursor: not-allowed;
 }

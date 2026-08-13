@@ -292,6 +292,9 @@ class PipelineResult(BaseModel):
     status: AgentStatus = "success"
     message: str = ""
     plan: NovelPlan | None = None
+    outline: NovelOutline | None = Field(
+        default=None, description="兼容现有 UI 的 NovelOutline 视图"
+    )
     characters: CharacterSystem | None = None
     character_states: list[CharacterState] = Field(default_factory=list)
     chapter: ChapterResult | None = None
@@ -421,6 +424,9 @@ class SequenceResult(BaseModel):
     status: AgentStatus = "success"
     message: str = ""
     plan: NovelPlan | None = None
+    outline: NovelOutline | None = Field(
+        default=None, description="兼容现有 UI 的 NovelOutline 视图"
+    )
     characters: CharacterSystem | None = None
     character_states: list[CharacterState] = Field(default_factory=list)
     chapters: list[ChapterRunResult] = Field(default_factory=list)
