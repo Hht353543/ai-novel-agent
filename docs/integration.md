@@ -102,6 +102,19 @@
 - `telemetry`：llm_calls / rag_calls / revision_attempts / steps / duration_ms；
 - `project_id`：`save=true` 或携带 `project_id` 时返回持久化后的项目 ID。
 
+### 异步进度端点
+
+- `POST /api/agents/pipeline/async`：返回 `{run_id, status: "CREATED"}`；
+- `POST /api/agents/sequence/async`：返回 `{run_id, status: "CREATED"}`；
+- `GET /api/agents/runs/{run_id}`：轮询 `PipelineRunState`（status / current_agent /
+  progress / revision_attempts / result / error）；
+- `GET /api/agents/runs`：最近运行列表。
+
+### POST /api/agents/sequence
+
+连续章节创作：`start_chapter` ~ `end_chapter`（默认 0~2），
+响应 `SequenceResult` 含逐章 `chapters`、最终 `timeline` / `memory_facts` 与 `outline`。
+
 ## 前端接入建议
 
 1. 先调 `plan` 生成规划，展示给用户确认；
@@ -115,6 +128,9 @@
 
 - `AGENT_MAX_REVISIONS=2`：审校失败最大修订次数；
 - `REVIEW_PASS_SCORE=80`：审校通过分数阈值（0-100）。
+- `AGENT_MEMORY_ENABLED` / `AGENT_TIMELINE_ENABLED`：记忆与时间线开关；
+- `AGENT_MEMORY_MAX_FACTS` / `AGENT_TIMELINE_MAX_ENTRIES`：记忆/时间线上限；
+- `AGENT_REVISION_DRAFT_MAX_CHARS`：修订时上一稿截断长度。
 
 ## 兼容性
 

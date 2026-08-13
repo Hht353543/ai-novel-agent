@@ -35,8 +35,13 @@ flowchart TD
     W -->|ChapterResult| R[ReviewerAgent]
     R -->|ReviewResult| Decide{通过?}
     Decide -->|否 且 未达上限| W
-    Decide -->|是| Out[最终章节 + 审校记录]
-    Out --> Persist[(NovelProject 扩展字段)]
+    Decide -->|是| Out[最终章节]
+    Out --> M[MemoryAgent]
+    M -->|状态增量 / 事实| S[State/Memory 层]
+    M -->|事件| T[TimelineAgent]
+    T -->|时间线| S
+    S --> Out2[最终章节 + 状态/记忆/时间线]
+    Out2 --> Persist[(NovelProject 扩展字段)]
 ```
 
 ## 分层职责
@@ -46,6 +51,7 @@ flowchart TD
 - `BaseAgent`：统一执行模板（输入校验 → 运行 → 输出校验），统一错误与遥测。
 - Agent：只通过构造注入的 `BaseLLM` / `RetrievalProvider` 访问基础设施，不直接操作数据库。
 - `AgentContext`：所有状态显式传递，禁止隐式全局变量。
+- `RunStore`：Pipeline/Sequence 运行状态（进度、当前 Agent、修订次数），供前端轮询。
 
 ## 数据流
 
@@ -54,6 +60,10 @@ flowchart TD
 3. CharacterAgent 根据规划生成 `CharacterSystem`（档案 + 状态 + 关系）。
 4. WriterAgent 从 Context 取规划、章节大纲、人物状态、记忆、前文与 RAG 结果生成正文。
 5. ReviewerAgent 审校并输出 `ReviewResult`；未通过且未达 `AGENT_MAX_REVISIONS` 时带修订意见重写。
-6. 通过或达到上限后，`save=true` 时把结果合并进项目存储（保留已有章节与角色卡）。
+6. MemoryAgent 提取状态增量与长期事实并应用，TimelineAgent 更新时间线。
+7. 通过或达到上限后，`save=true` 时把结果合并进项目存储（保留已有章节与角色卡）。
+
+连续章节场景：`POST /api/agents/sequence` 每章重复 4~7 步，自动继承上一章结尾、
+人物状态、长期事实与时间线。
 
 详细说明见 [multi-agent.md](multi-agent.md)。

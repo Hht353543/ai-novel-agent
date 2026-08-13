@@ -21,6 +21,8 @@ flowchart LR
 | CharacterAgent | `NovelPlan` + RAG | `CharacterSystem`（档案 / 状态 / 关系） |
 | WriterAgent | 规划 + 人物 + 记忆 + 前文 + RAG | `ChapterResult`（正文 / 全文 / 记忆） |
 | ReviewerAgent | 规划 + 人物 + 正文 + 记忆 + RAG | `ReviewResult`（通过 / 评分 / 问题 / 修订意见） |
+| MemoryAgent | 章节正文 + 现有状态/记忆 | `MemoryUpdate`（状态增量 + 长期事实 + 事件） |
+| TimelineAgent | 章节事件 + 现有时间线 | `TimelineUpdate`（完整时间线 + 一致性警告） |
 
 ## AgentContext
 
@@ -51,12 +53,22 @@ Agent 之间不通过全局变量通信；所有中间结果显式写入 Context
 
 RAG 调用统一走 `BaseAgent._retrieve()`：计数、错误包装为 `AgentError("rag")`，不把整个知识库塞入 Prompt。
 
+## 记忆与状态层
+
+- MemoryAgent 从每章提取 `CharacterStateDelta` 并规则化应用到人物状态（`state_engine.py`）；
+- 长期事实按重要性排序、去重、截断后随项目持久化；
+- TimelineAgent 维护事件顺序并发现时间矛盾；
+- Memory 与 RAG 边界：RAG=外部知识检索，Memory=本书事实约束。详见 [memory.md](memory.md)。
+
 ## Reviewer 修订循环
 
 1. Writer 生成初稿 → Reviewer 审校；
 2. 通过条件：`passed=true` 且 `score >= REVIEW_PASS_SCORE` 且 `revision_required=false`；
 3. 未通过且未达 `AGENT_MAX_REVISIONS`（默认 2）→ 带修订意见重新写作 → 再审校；
 4. 达到上限 → 返回最高分版本，`status=revision_exhausted`，附完整 `revision_history`，不静默失败。
+
+第三阶段改进：修订时显式携带上一稿全文（截断到 `AGENT_REVISION_DRAFT_MAX_CHARS`），
+让 Writer 做针对性局部修改，而不是整章重写。
 
 ## 错误处理
 
@@ -101,3 +113,5 @@ curl -X POST http://127.0.0.1:8000/api/agents/pipeline \
 ```
 
 未配置 `DEEPSEEK_API_KEY` 时返回 `status=demo` 的演示结果。
+
+前端一键 Pipeline 与异步进度说明见 [pipeline.md](pipeline.md)。

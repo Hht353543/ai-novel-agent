@@ -351,12 +351,19 @@ compose 已挂载 `../backend/knowledge`（知识库）与 `../backend/data`（�
 - `POST /api/agents/characters`：Character Agent 建立人物系统（档案 + 状态 + 关系）；
 - `POST /api/agents/write`：Writer Agent 生成章节正文；
 - `POST /api/agents/review`：Reviewer Agent 审校章节；
-- `POST /api/agents/pipeline`：完整流程（规划 → 人物 → 写作 → 审校 → 必要时修订循环）。
+- `POST /api/agents/pipeline`：完整流程（规划 → 人物 → 写作 → 审校 → 必要时修订循环）；
+- `POST /api/agents/pipeline/async` + `GET /api/agents/runs/{run_id}`：异步执行与进度轮询；
+- `POST /api/agents/sequence`：连续章节创作（自动继承人物状态 / 记忆 / 时间线）。
 
 未配置 API Key 时全部返回演示结果；审校失败默认最多修订 2 次（`AGENT_MAX_REVISIONS`），
-达到上限返回最高分版本并显式标记 `revision_exhausted`。
+达到上限返回最高分版本并显式标记 `revision_exhausted`。每章完成后 MemoryAgent 更新
+人物状态与长期事实、TimelineAgent 维护时间线（均可通过环境变量关闭）。
 
-详细说明见 [docs/multi-agent.md](docs/multi-agent.md)、[docs/architecture.md](docs/architecture.md)、[docs/integration.md](docs/integration.md)。
+前端大纲生成页已提供“一键 Pipeline（多 Agent）”入口：选择连续章数后异步启动，
+实时显示当前阶段 / Agent / 修订次数 / 审校评分，完成后自动保存项目并可进入章节写作。
+
+详细说明见 [docs/multi-agent.md](docs/multi-agent.md)、[docs/pipeline.md](docs/pipeline.md)、
+[docs/memory.md](docs/memory.md)、[docs/architecture.md](docs/architecture.md)、[docs/integration.md](docs/integration.md)。
 
 ## License
 
