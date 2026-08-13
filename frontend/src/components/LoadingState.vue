@@ -16,18 +16,27 @@ withDefaults(defineProps<{ text?: string }>(), {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 16px;
-  padding: 48px 0;
-  color: #9aa3b5;
+  gap: 18px;
+  padding: 56px 0;
+  color: var(--text-secondary);
+  font-size: 14px;
 }
 
 .spinner {
-  width: 40px;
-  height: 40px;
-  border: 3px solid rgba(110, 168, 255, 0.25);
-  border-top-color: #6ea8ff;
+  width: 44px;
+  height: 44px;
   border-radius: 50%;
-  animation: spin 0.9s linear infinite;
+  background: conic-gradient(
+    from 0deg,
+    rgba(192, 86, 33, 0.1),
+    #c05621,
+    #d97742,
+    rgba(192, 86, 33, 0.1)
+  );
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 4px), #000 0);
+  mask: radial-gradient(farthest-side, transparent calc(100% - 4px), #000 0);
+  animation: spin 0.8s linear infinite;
+  filter: drop-shadow(0 0 12px rgba(192, 86, 33, 0.3));
 }
 
 @keyframes spin {
@@ -36,3 +45,4 @@ withDefaults(defineProps<{ text?: string }>(), {
   }
 }
 </style>
+

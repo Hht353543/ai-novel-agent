@@ -66,16 +66,34 @@ function onVolumeChange(event: Event): void {
 </script>
 
 <style scoped>
+.cards-panel {
+  animation: fade-in 0.25s ease;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
 .chapter-head {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 12px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+  gap: 10px;
 }
 
 .chapter-head h3 {
-  color: #ffffff;
+  color: #3d3931;
   font-size: 17px;
+  font-weight: 650;
 }
 
 .card-toolbar {
@@ -86,12 +104,13 @@ function onVolumeChange(event: Event): void {
 }
 
 .card-toolbar select {
-  background: #0f1220;
-  border: 1px solid #2b3150;
-  border-radius: 8px;
-  color: #e8eaf0;
-  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  color: var(--text);
+  padding: 9px 12px;
   font-size: 13px;
+  outline: none;
 }
 
 .card-list {
@@ -101,15 +120,20 @@ function onVolumeChange(event: Event): void {
 }
 
 .card-item {
-  background: #0f1220;
-  border: 1px solid #2b3150;
-  border-radius: 10px;
-  padding: 12px 14px;
+  background: rgba(255, 255, 255, 0.6);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 14px 16px;
+  transition: border-color 0.18s ease;
+}
+
+.card-item:hover {
+  border-color: var(--border-strong);
 }
 
 .card-item summary {
   cursor: pointer;
-  color: #ffffff;
+  color: #3d3931;
   font-size: 15px;
   font-weight: 600;
   list-style: none;
@@ -120,16 +144,16 @@ function onVolumeChange(event: Event): void {
 }
 
 .card-role {
-  color: #6ea8ff;
+  color: var(--accent);
   font-size: 12px;
-  font-weight: 400;
+  font-weight: 500;
   margin-left: 8px;
 }
 
 .card-fields {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 10px;
+  gap: 11px;
   margin-top: 12px;
 }
 
@@ -138,25 +162,28 @@ function onVolumeChange(event: Event): void {
   flex-direction: column;
   gap: 5px;
   font-size: 12px;
-  color: #9aa3b5;
+  font-weight: 500;
+  color: var(--text-secondary);
 }
 
 .card-fields input,
 .card-fields textarea {
-  background: #171b2c;
-  border: 1px solid #2b3150;
-  border-radius: 8px;
-  color: #e8eaf0;
-  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid var(--border-strong);
+  border-radius: 9px;
+  color: var(--text);
+  padding: 9px 11px;
   font-size: 13px;
   line-height: 1.6;
   outline: none;
   resize: vertical;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease;
 }
 
 .card-fields input:focus,
 .card-fields textarea:focus {
-  border-color: #6ea8ff;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(192, 86, 33, 0.14);
 }
 
 .card-fields .delete-btn {
@@ -166,45 +193,50 @@ function onVolumeChange(event: Event): void {
 }
 
 .cards-empty {
-  color: #9aa3b5;
-  font-size: 13px;
-  line-height: 1.8;
-  padding: 24px 0;
+  color: var(--text-secondary);
+  font-size: 13.5px;
+  line-height: 1.9;
+  padding: 28px 8px;
 }
 
 .btn {
-  background: #202540;
-  border: 1px solid #2b3150;
+  background: rgba(93, 82, 60, 0.06);
+  border: 1px solid var(--border-strong);
   border-radius: 10px;
-  color: #cdd3e0;
-  padding: 10px 16px;
-  font-size: 14px;
+  color: var(--text);
+  padding: 9px 15px;
+  font-size: 13.5px;
+  font-weight: 500;
   cursor: pointer;
+  transition: background 0.18s ease, border-color 0.18s ease,
+    transform 0.18s ease;
 }
 
 .btn:hover:not(:disabled) {
-  border-color: #6ea8ff;
-  color: #6ea8ff;
+  background: rgba(192, 86, 33, 0.12);
+  border-color: rgba(192, 86, 33, 0.35);
+  transform: translateY(-1px);
 }
 
 .btn:disabled {
-  opacity: 0.6;
+  opacity: 0.55;
   cursor: not-allowed;
 }
 
 .delete-btn {
   background: transparent;
-  border: 1px solid rgba(255, 123, 123, 0.4);
-  border-radius: 8px;
-  color: #ff9b9b;
-  padding: 6px 12px;
-  font-size: 12px;
+  border: 1px solid rgba(220, 38, 38, 0.35);
+  border-radius: 9px;
+  color: var(--danger);
+  padding: 7px 13px;
+  font-size: 12.5px;
   cursor: pointer;
+  transition: background 0.18s ease;
   flex-shrink: 0;
 }
 
 .delete-btn:hover {
-  background: rgba(255, 123, 123, 0.15);
+  background: rgba(220, 38, 38, 0.1);
 }
 
 @media (max-width: 760px) {
@@ -213,3 +245,4 @@ function onVolumeChange(event: Event): void {
   }
 }
 </style>
+

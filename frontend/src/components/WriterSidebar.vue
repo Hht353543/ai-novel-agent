@@ -70,12 +70,15 @@ function visibleChapters(chapters: string[], vi: number): string[] {
 
 <style scoped>
 .sidebar {
-  background: #171b2c;
-  border: 1px solid #262c45;
-  border-radius: 14px;
+  background: var(--panel);
+  backdrop-filter: blur(16px) saturate(1.2);
+  -webkit-backdrop-filter: blur(16px) saturate(1.2);
+  border: 1px solid var(--border);
+  border-radius: 20px;
   padding: 16px;
-  max-height: calc(100vh - 180px);
+  max-height: calc(100vh - 170px);
   overflow-y: auto;
+  box-shadow: var(--shadow);
 }
 
 .volume {
@@ -83,17 +86,26 @@ function visibleChapters(chapters: string[], vi: number): string[] {
 }
 
 .volume-title {
-  color: #ffd479;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #a16207;
   font-size: 14px;
-  margin-bottom: 8px;
+  font-weight: 600;
+  margin-bottom: 10px;
   cursor: pointer;
   user-select: none;
+  transition: color 0.18s ease;
+}
+
+.volume-title:hover {
+  color: #a16207;
 }
 
 .volume-caret {
   display: inline-block;
   width: 14px;
-  color: #9aa3b5;
+  color: var(--text-muted);
 }
 
 .expand-btn {
@@ -101,17 +113,19 @@ function visibleChapters(chapters: string[], vi: number): string[] {
   width: 100%;
   text-align: left;
   background: transparent;
-  border: 1px dashed #2b3150;
-  border-radius: 8px;
-  color: #6ea8ff;
-  padding: 6px 10px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 9px;
+  color: var(--accent);
+  padding: 7px 10px;
   margin-bottom: 6px;
   font-size: 12px;
   cursor: pointer;
+  transition: background 0.18s ease, border-color 0.18s ease;
 }
 
 .expand-btn:hover {
-  border-color: #6ea8ff;
+  border-color: var(--accent);
+  background: rgba(192, 86, 33, 0.08);
 }
 
 .chapter-btn {
@@ -120,21 +134,25 @@ function visibleChapters(chapters: string[], vi: number): string[] {
   text-align: left;
   background: transparent;
   border: 1px solid transparent;
-  border-radius: 8px;
-  color: #aab3c8;
-  padding: 8px 10px;
-  margin-bottom: 6px;
+  border-radius: 9px;
+  color: var(--text-secondary);
+  padding: 8px 11px;
+  margin-bottom: 5px;
   font-size: 13px;
   cursor: pointer;
+  transition: background 0.18s ease, color 0.18s ease, border-color 0.18s ease;
 }
 
 .chapter-btn:hover {
-  background: #202540;
+  background: rgba(93, 82, 60, 0.06);
+  color: var(--text);
 }
 
 .chapter-btn.active {
-  background: rgba(110, 168, 255, 0.15);
-  border-color: #6ea8ff;
-  color: #6ea8ff;
+  background: linear-gradient(135deg, rgba(192, 86, 33, 0.18), rgba(154, 63, 30, 0.1));
+  border-color: rgba(192, 86, 33, 0.4);
+  color: #c05621;
+  box-shadow: inset 0 0 0 1px rgba(192, 86, 33, 0.12);
 }
 </style>
+
