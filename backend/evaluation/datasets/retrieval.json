@@ -1,0 +1,28 @@
+{
+  "scenarios": [
+    {
+      "id": "cultivation-breakthrough",
+      "query": "突破修为需要灵力积累与心境",
+      "relevant": ["世界观/cultivation.txt"],
+      "categories": ["世界观", "other"]
+    },
+    {
+      "id": "protagonist-backstory",
+      "query": "沈惊澜父亲被害家族旧案背景",
+      "relevant": ["人物角色卡/protagonist.txt"],
+      "categories": ["人物角色卡"]
+    },
+    {
+      "id": "plot-climax",
+      "query": "第一卷高潮击败血煞宗救百姓",
+      "relevant": ["剧情大纲/volume1.txt"],
+      "categories": ["剧情大纲"]
+    },
+    {
+      "id": "artifact-power",
+      "query": "玉佩灵气充能与金丹封印",
+      "relevant": ["other/artifacts.txt"],
+      "categories": ["other", "世界观"]
+    }
+  ]
+}

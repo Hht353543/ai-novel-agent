@@ -537,6 +537,7 @@ class NovelOrchestrator:
             ctx.base_version = chapter.attempt
             ctx.metadata["attempt"] = attempts + 1
             chapter = await self.write_chapter(ctx)
+            ctx.chapter_text = chapter.content
             if tracker:
                 tracker.set(
                     "REVIEWING",

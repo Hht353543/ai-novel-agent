@@ -1,0 +1,84 @@
+{
+  "documents": [
+    {
+      "source": "世界观/cultivation.txt",
+      "category": "世界观",
+      "content": "修炼境界分为九重：炼体、筑基、先天、金丹、元婴、化神、合体、大乘、渡劫。突破需要灵力积累与心境圆满，瓶颈期常见于金丹至元婴。"
+    },
+    {
+      "source": "世界观/sects.txt",
+      "category": "世界观",
+      "content": "天下宗门林立，天剑宗以剑道称雄，万宝阁掌控丹药与法器贸易，魔道以血煞宗为首。宗门大比每五年举办一次。"
+    },
+    {
+      "source": "人物角色卡/protagonist.txt",
+      "category": "人物角色卡",
+      "content": "沈惊澜，捕快世家出身，父亲沈青崖因追查旧案被害，仇人疑为朝中权臣。性格冷静缜密，擅长短句与观察。"
+    },
+    {
+      "source": "剧情大纲/volume1.txt",
+      "category": "剧情大纲",
+      "content": "第一卷：少年觉醒武道熔炉，在县城立足。高潮为击败血煞宗外门弟子，救出被掳百姓，获得家族旧案第一条线索。"
+    },
+    {
+      "source": "other/artifacts.txt",
+      "category": "other",
+      "content": "神秘玉佩可吸收灵气辅助修炼，每七日充能一次，持有者修为低于金丹时无法开启封印层。"
+    },
+    {
+      "source": "人物角色卡/rival.txt",
+      "category": "人物角色卡",
+      "content": "楚云岚，天剑宗内门弟子，与沈惊澜亦敌亦友，剑法凌厉，性格高傲但重信义。"
+    },
+    {
+      "source": "世界观/geography.txt",
+      "category": "世界观",
+      "content": "大乾王朝分九州，京城居北，县城散落于江南水乡，山海关扼守北疆。"
+    },
+    {
+      "source": "世界观/history.txt",
+      "category": "世界观",
+      "content": "百年前魔道入侵，正道五派联手击退，自此江湖格局确立，朝廷设立武卫司监察江湖。"
+    },
+    {
+      "source": "人物角色卡/mentor.txt",
+      "category": "人物角色卡",
+      "content": "陈伯，沈府老管家，知晓沈青崖旧案部分内情，性格沉稳，口风极严。"
+    },
+    {
+      "source": "人物角色卡/antagonist.txt",
+      "category": "人物角色卡",
+      "content": "血煞宗外门执事，修炼血煞功，手段狠辣，负责在县城物色炉鼎。"
+    },
+    {
+      "source": "剧情大纲/volume2.txt",
+      "category": "剧情大纲",
+      "content": "第二卷：主角入京城，卷入宗门大比与朝堂暗流，逐步接近父亲旧案真相。"
+    },
+    {
+      "source": "other/poems.txt",
+      "category": "other",
+      "content": "江湖诗词集锦：少年行、剑客吟、夜雨寄北等篇目，用于文风参考。"
+    },
+    {
+      "source": "世界观/food.txt",
+      "category": "世界观",
+      "content": "县城夜市小吃闻名，酒肆茶楼沿河而建，江湖客多在此交换消息。"
+    },
+    {
+      "source": "世界观/climate.txt",
+      "category": "世界观",
+      "content": "江南多雨，春汛时节河道封航；北地干旱，商队常备水囊。"
+    },
+    {
+      "source": "人物角色卡/shopkeeper.txt",
+      "category": "人物角色卡",
+      "content": "王掌柜，县城万宝阁分号掌柜，精明圆滑，与江湖各派均有往来。"
+    },
+    {
+      "source": "剧情大纲/volume3.txt",
+      "category": "剧情大纲",
+      "content": "第三卷：主角受封缉捕使，统领县衙捕快，肃清县城黑道势力。"
+    }
+  ]
+}
