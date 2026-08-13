@@ -3,6 +3,7 @@
 import logging
 import time
 import uuid
+from datetime import datetime, timezone
 from typing import Any, Callable
 
 from app.agents.base import AgentError, BaseAgent
@@ -11,6 +12,7 @@ from app.agents.protocol import (
     ChapterOutline,
     ChapterResult,
     CharacterSystem,
+    CharacterStateUpdateRecord,
     NovelPlan,
     PipelineRequest,
     PipelineResult,
@@ -20,6 +22,7 @@ from app.agents.protocol import (
 )
 from app.agents.registry import AgentRegistry, default_registry
 from app.agents.run_state import RunTracker
+from app.agents.state_engine import apply_character_state_deltas
 from app.llm.deepseek_provider import DeepSeekProvider
 from app.llm.provider import BaseLLM
 from app.rag.base import RetrievalProvider
@@ -27,6 +30,10 @@ from app.rag.retriever import get_retriever
 from app.services.chapter_service import join_text
 
 logger = logging.getLogger(__name__)
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
 
 
 class NovelOrchestrator:
@@ -183,6 +190,7 @@ class NovelOrchestrator:
             chapter = await self.write_chapter(ctx)
             if tracker:
                 tracker.mark_step_done("WRITING")
+            ctx.chapter_text = chapter.content
             history: list[RevisionAttempt] = []
             latest_review: ReviewResult | None = None
             status = "demo" if not self.llm.available else "success"
@@ -201,7 +209,6 @@ class NovelOrchestrator:
                         message="正在审校章节",
                         step="REVIEWING",
                     )
-                ctx.chapter_text = chapter.content
                 review = await self.review_chapter(ctx)
                 if tracker:
                     tracker.mark_step_done("REVIEWING")
@@ -230,7 +237,6 @@ class NovelOrchestrator:
                     ctx.revision_instructions = instructions
                     ctx.metadata["attempt"] = attempts + 1
                     chapter = await self.write_chapter(ctx)
-                    ctx.chapter_text = chapter.content
                     if tracker:
                         tracker.set(
                             "REVIEWING",
@@ -273,14 +279,54 @@ class NovelOrchestrator:
                         f"{best.review.score if best.review else 0}）。"
                     )
 
-            if ctx.config.memory_enabled:
+            if ctx.config.agent_memory_enabled:
                 if tracker:
                     tracker.set(
                         "UPDATING_MEMORY",
                         agent="memory",
-                        message="正在更新章节记忆",
+                        message="正在提取人物状态与长期记忆",
                         step="UPDATING_MEMORY",
                     )
+                memory_update = await self._agent("memory").execute(ctx)
+                ctx.memory_events = memory_update.events
+                ctx.character_states = apply_character_state_deltas(
+                    ctx.character_states,
+                    memory_update.state_deltas,
+                )
+                existing_keys = {
+                    f.dedup_key for f in ctx.memory_facts if f.dedup_key
+                }
+                for fact in memory_update.facts:
+                    if fact.dedup_key and fact.dedup_key not in existing_keys:
+                        ctx.memory_facts.append(fact)
+                        existing_keys.add(fact.dedup_key)
+                importance = {"high": 0, "medium": 1, "low": 2}
+                ctx.memory_facts = sorted(
+                    ctx.memory_facts,
+                    key=lambda f: importance.get(f.importance, 1),
+                )[: ctx.config.agent_memory_max_facts]
+                ctx.character_state_updates.append(
+                    CharacterStateUpdateRecord(
+                        chapter_index=request.chapter_index,
+                        chapter_title=ctx.chapter_title,
+                        deltas=memory_update.state_deltas,
+                        created_at=_now(),
+                    )
+                )
+                if ctx.config.agent_timeline_enabled:
+                    timeline_update = await self._agent("timeline").execute(ctx)
+                    ctx.timeline = timeline_update.entries[
+                        -ctx.config.agent_timeline_max_entries :
+                    ]
+                    if timeline_update.warnings:
+                        logger.warning(
+                            "Timeline 一致性警告 run_id=%s: %s",
+                            ctx.run_id,
+                            "; ".join(timeline_update.warnings),
+                        )
+                if tracker:
+                    tracker.mark_step_done("UPDATING_MEMORY")
+            elif ctx.config.memory_enabled:
                 from app.services.memory_service import update_memory
 
                 memory = await update_memory(
@@ -319,6 +365,9 @@ class NovelOrchestrator:
                 chapter=chapter,
                 latest_review=latest_review,
                 revision_history=history,
+                character_state_updates=ctx.character_state_updates,
+                timeline=ctx.timeline,
+                memory_facts=ctx.memory_facts,
                 telemetry=ctx.telemetry.dict(),
             )
             if tracker:
@@ -389,6 +438,9 @@ class NovelOrchestrator:
             character_states=characters.states,
             character_relations=characters.relationships,
             latest_review=latest_review,
+            character_state_updates=ctx.character_state_updates,
+            timeline=ctx.timeline,
+            memory_facts=ctx.memory_facts,
         )
         persister = self.persister or save_project
         saved = persister(save_req)

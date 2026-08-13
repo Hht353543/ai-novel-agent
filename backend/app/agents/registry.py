@@ -4,8 +4,10 @@ from typing import Callable, TypeVar
 
 from app.agents.base import BaseAgent
 from app.agents.character_agent import CharacterAgent
+from app.agents.memory_agent import MemoryAgent
 from app.agents.planner_agent import PlannerAgent
 from app.agents.reviewer_agent import ReviewerAgent
+from app.agents.timeline_agent import TimelineAgent
 from app.agents.writer_agent import WriterAgent
 
 T = TypeVar("T", bound=BaseAgent)
@@ -37,6 +39,8 @@ default_registry.register("planner", PlannerAgent)
 default_registry.register("character", CharacterAgent)
 default_registry.register("writer", WriterAgent)
 default_registry.register("reviewer", ReviewerAgent)
+default_registry.register("memory", MemoryAgent)
+default_registry.register("timeline", TimelineAgent)
 
 
 def create_agent(name: str, **deps: object) -> BaseAgent:

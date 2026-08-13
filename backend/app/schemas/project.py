@@ -8,8 +8,11 @@ from app.agents.protocol import (
     CharacterProfile,
     CharacterRelation,
     CharacterState,
+    CharacterStateUpdateRecord,
+    MemoryFact,
     NovelPlan,
     ReviewResult,
+    TimelineEntry,
 )
 from app.schemas.character import CharacterCard
 from app.schemas.novel import NovelOutline
@@ -51,6 +54,15 @@ class NovelProject(BaseModel):
     )
     latest_review: ReviewResult | None = Field(
         default=None, description="最近一次审校结果（可空）"
+    )
+    character_state_updates: list[CharacterStateUpdateRecord] = Field(
+        default_factory=list, description="各章人物状态更新记录（可空）"
+    )
+    timeline: list[TimelineEntry] = Field(
+        default_factory=list, description="小说时间线（可空）"
+    )
+    memory_facts: list[MemoryFact] = Field(
+        default_factory=list, description="长期记忆事实（可空）"
     )
     created_at: str = Field(default="", description="创建时间 ISO 格式")
     updated_at: str = Field(default="", description="最后保存时间 ISO 格式")
@@ -94,6 +106,15 @@ class ProjectSaveRequest(BaseModel):
     )
     latest_review: ReviewResult | None = Field(
         default=None, description="最近一次审校结果（可空）"
+    )
+    character_state_updates: list[CharacterStateUpdateRecord] = Field(
+        default_factory=list, description="各章人物状态更新记录（可空）"
+    )
+    timeline: list[TimelineEntry] = Field(
+        default_factory=list, description="小说时间线（可空）"
+    )
+    memory_facts: list[MemoryFact] = Field(
+        default_factory=list, description="长期记忆事实（可空）"
     )
 
     class Config:

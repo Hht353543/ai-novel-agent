@@ -139,6 +139,28 @@ class Settings:
     agent_max_revisions: int = int(os.getenv("AGENT_MAX_REVISIONS", "2"))
     # Reviewer 通过分数阈值（0-100）
     review_pass_score: int = int(os.getenv("REVIEW_PASS_SCORE", "80"))
+    # Pipeline 是否执行 MemoryAgent（章节事实提取 + 人物状态更新）
+    agent_memory_enabled: bool = os.getenv("AGENT_MEMORY_ENABLED", "true").lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+    # Pipeline 是否执行 TimelineAgent（时间线维护与一致性检查）
+    agent_timeline_enabled: bool = os.getenv("AGENT_TIMELINE_ENABLED", "true").lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+    # 长期记忆保留的事实数量上限（超出按 importance 排序截断）
+    agent_memory_max_facts: int = int(os.getenv("AGENT_MEMORY_MAX_FACTS", "30"))
+    # 时间线保留的条目数量上限
+    agent_timeline_max_entries: int = int(
+        os.getenv("AGENT_TIMELINE_MAX_ENTRIES", "50")
+    )
+    # 修订时携带的上一稿最大字符数（控制 token 成本）
+    agent_revision_draft_max_chars: int = int(
+        os.getenv("AGENT_REVISION_DRAFT_MAX_CHARS", "4000")
+    )
 
     # ---------- 大纲卷章规划 ----------
     # 每章标准字数：总章数 = ceil(总字数 / 每章字数)

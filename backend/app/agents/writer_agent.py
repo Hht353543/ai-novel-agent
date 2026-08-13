@@ -99,6 +99,10 @@ class WriterAgent(BaseAgent[ChapterResult]):
             attachment_text=ctx.attachment_text,
             target_length=ctx.target_length,
             revision_instructions=ctx.revision_instructions,
+            memory_facts=ctx.memory_facts,
+            timeline=ctx.timeline,
+            previous_draft=ctx.previous_draft,
+            base_version=ctx.base_version,
         )
         raw = await self._llm_text(ctx, prompt, SYSTEM_ROLE)
         content = clean_chapter_output(raw)

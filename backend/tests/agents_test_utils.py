@@ -87,6 +87,9 @@ class FakePersister:
             character_states=save_request.character_states,
             character_relations=save_request.character_relations,
             latest_review=save_request.latest_review,
+            character_state_updates=save_request.character_state_updates,
+            timeline=save_request.timeline,
+            memory_facts=save_request.memory_facts,
         )
 
 
@@ -176,6 +179,57 @@ REVIEW_PASS = {
     "revision_required": False,
     "summary": "整体合格",
     "issues": [],
+}
+
+MEMORY_UPDATE = {
+    "state_deltas": [
+        {
+            "character": "沈惊堂",
+            "changes": [
+                {
+                    "field": "cultivation",
+                    "action": "set",
+                    "old": "锻体",
+                    "new": "先天",
+                    "reason": "章节突破",
+                },
+                {
+                    "field": "possessions",
+                    "action": "add",
+                    "new": "玉佩",
+                    "reason": "获得信物",
+                },
+            ],
+        }
+    ],
+    "facts": [
+        {
+            "category": "event",
+            "content": "主角在县城觉醒武学熔炉",
+            "importance": "high",
+        },
+        {
+            "category": "item",
+            "content": "获得神秘玉佩",
+            "importance": "medium",
+        },
+    ],
+    "events": ["觉醒武学熔炉", "获得玉佩"],
+}
+
+TIMELINE_UPDATE = {
+    "entries": [
+        {
+            "sequence": 1,
+            "chapter_index": 0,
+            "chapter_title": "第一章 觉醒",
+            "time_label": "当天",
+            "event": "觉醒武学熔炉",
+            "location": "县城",
+            "characters": ["沈惊堂"],
+        }
+    ],
+    "warnings": [],
 }
 
 

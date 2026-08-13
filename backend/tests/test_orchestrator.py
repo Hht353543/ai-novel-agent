@@ -7,9 +7,11 @@ from agents_test_utils import (
     CHARACTER_SYSTEM,
     FakePersister,
     FakeRetriever,
+    MEMORY_UPDATE,
     PLAN,
     REVIEW_PASS,
     ScriptedLLM,
+    TIMELINE_UPDATE,
     review_fail,
     sync_test,
 )
@@ -35,7 +37,13 @@ def _request(**kwargs):
 @sync_test
 async def test_pipeline_success_first_review_passes():
     llm = ScriptedLLM(
-        json_results=[PLAN, CHARACTER_SYSTEM, REVIEW_PASS],
+        json_results=[
+            PLAN,
+            CHARACTER_SYSTEM,
+            REVIEW_PASS,
+            MEMORY_UPDATE,
+            TIMELINE_UPDATE,
+        ],
         text_results=["正文v1"],
     )
     orchestrator = NovelOrchestrator(llm=llm, retriever=FakeRetriever())
@@ -46,9 +54,12 @@ async def test_pipeline_success_first_review_passes():
     assert result.chapter.content == "正文v1"
     assert result.latest_review.passed is True
     assert len(result.revision_history) == 1
-    assert result.telemetry["llm_calls"] == 4
-    assert result.telemetry["rag_calls"] == 4
+    assert result.telemetry["llm_calls"] == 6
+    assert result.telemetry["rag_calls"] == 6
     assert result.revision_history[0].instructions == ""
+    assert result.character_state_updates[0].deltas[0].changes[0].new == "先天"
+    assert result.timeline[0].event == "觉醒武学熔炉"
+    assert result.memory_facts[0].content == "主角在县城觉醒武学熔炉"
 
 
 @sync_test
@@ -59,6 +70,8 @@ async def test_pipeline_revision_loop_passes_on_second():
             CHARACTER_SYSTEM,
             review_fail(score=50),
             REVIEW_PASS,
+            MEMORY_UPDATE,
+            TIMELINE_UPDATE,
         ],
         text_results=["正文v1", "正文v2"],
     )
@@ -82,6 +95,8 @@ async def test_pipeline_max_revisions_returns_best_version():
             review_fail(score=50),
             review_fail(score=70),
             review_fail(score=60),
+            MEMORY_UPDATE,
+            TIMELINE_UPDATE,
         ],
         text_results=["v1", "v2", "v3"],
     )
@@ -102,7 +117,7 @@ async def test_pipeline_max_revisions_returns_best_version():
 @sync_test
 async def test_pipeline_without_review_skips_reviewer():
     llm = ScriptedLLM(
-        json_results=[PLAN, CHARACTER_SYSTEM],
+        json_results=[PLAN, CHARACTER_SYSTEM, MEMORY_UPDATE, TIMELINE_UPDATE],
         text_results=["正文v1"],
     )
     orchestrator = NovelOrchestrator(llm=llm, retriever=FakeRetriever())
@@ -110,8 +125,8 @@ async def test_pipeline_without_review_skips_reviewer():
     assert result.status == "success"
     assert result.latest_review is None
     assert result.revision_history == []
-    assert result.telemetry["llm_calls"] == 3  # planner + character + writer
-    assert result.telemetry["rag_calls"] == 3
+    assert result.telemetry["llm_calls"] == 5  # plan+char+writer+memory+timeline
+    assert result.telemetry["rag_calls"] == 5
 
 
 @sync_test
@@ -138,7 +153,13 @@ async def test_pipeline_agent_error_is_explicit():
 @sync_test
 async def test_pipeline_persists_when_save_enabled():
     llm = ScriptedLLM(
-        json_results=[PLAN, CHARACTER_SYSTEM, REVIEW_PASS],
+        json_results=[
+            PLAN,
+            CHARACTER_SYSTEM,
+            REVIEW_PASS,
+            MEMORY_UPDATE,
+            TIMELINE_UPDATE,
+        ],
         text_results=["正文v1"],
     )
     persister = FakePersister()
@@ -155,12 +176,20 @@ async def test_pipeline_persists_when_save_enabled():
     assert saved.plan.title == "测试书"
     assert saved.character_profiles[0].name == "沈惊堂"
     assert saved.latest_review.passed is True
+    assert saved.timeline[0].event == "觉醒武学熔炉"
+    assert saved.memory_facts[0].importance == "high"
 
 
 @sync_test
 async def test_pipeline_does_not_persist_without_save():
     llm = ScriptedLLM(
-        json_results=[PLAN, CHARACTER_SYSTEM, REVIEW_PASS],
+        json_results=[
+            PLAN,
+            CHARACTER_SYSTEM,
+            REVIEW_PASS,
+            MEMORY_UPDATE,
+            TIMELINE_UPDATE,
+        ],
         text_results=["正文v1"],
     )
     persister = FakePersister()

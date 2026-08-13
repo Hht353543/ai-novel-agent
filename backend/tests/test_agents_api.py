@@ -15,9 +15,11 @@ import app.api.agents as api_agents
 from agents_test_utils import (
     CHARACTER_SYSTEM,
     FakeRetriever,
+    MEMORY_UPDATE,
     PLAN,
     REVIEW_PASS,
     ScriptedLLM,
+    TIMELINE_UPDATE,
 )
 
 
@@ -111,7 +113,13 @@ def test_review_endpoint_empty_text_is_error(client, monkeypatch):
 
 def test_pipeline_endpoint_success(client, monkeypatch):
     llm = ScriptedLLM(
-        json_results=[PLAN, CHARACTER_SYSTEM, REVIEW_PASS],
+        json_results=[
+            PLAN,
+            CHARACTER_SYSTEM,
+            REVIEW_PASS,
+            MEMORY_UPDATE,
+            TIMELINE_UPDATE,
+        ],
         text_results=["正文v1"],
     )
     _patch_orchestrator(monkeypatch, llm)
@@ -197,7 +205,13 @@ def test_pipeline_async_returns_run_id(client, monkeypatch):
 
 def test_pipeline_run_polling_contract(client, monkeypatch):
     llm = ScriptedLLM(
-        json_results=[PLAN, CHARACTER_SYSTEM, REVIEW_PASS],
+        json_results=[
+            PLAN,
+            CHARACTER_SYSTEM,
+            REVIEW_PASS,
+            MEMORY_UPDATE,
+            TIMELINE_UPDATE,
+        ],
         text_results=["正文v1"],
     )
     _patch_orchestrator(monkeypatch, llm)

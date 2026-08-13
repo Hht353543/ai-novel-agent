@@ -16,8 +16,11 @@ from app.agents.protocol import (
     CharacterProfile,
     CharacterRelation,
     CharacterState,
+    CharacterStateUpdateRecord,
+    MemoryFact,
     NovelPlan,
     PlannerRequest,
+    TimelineEntry,
 )
 
 
@@ -73,6 +76,14 @@ class AgentContext:
     chapter_title: str = ""
     chapter_text: str = ""
     revision_instructions: str = ""
+    previous_draft: str = ""
+    base_version: int = 0
+    memory_facts: list[MemoryFact] = field(default_factory=list)
+    timeline: list[TimelineEntry] = field(default_factory=list)
+    memory_events: list[str] = field(default_factory=list)
+    character_state_updates: list[CharacterStateUpdateRecord] = field(
+        default_factory=list
+    )
     telemetry: AgentTelemetry = field(default_factory=AgentTelemetry)
     metadata: dict[str, Any] = field(default_factory=dict)
 

@@ -88,6 +88,11 @@ def save_project(request: ProjectSaveRequest) -> NovelProject:
             "latest_review": (
                 request.latest_review.dict() if request.latest_review else None
             ),
+            "character_state_updates": [
+                u.dict() for u in request.character_state_updates
+            ],
+            "timeline": [t.dict() for t in request.timeline],
+            "memory_facts": [f.dict() for f in request.memory_facts],
             "created_at": now,
             "updated_at": now,
         }
@@ -111,6 +116,11 @@ def save_project(request: ProjectSaveRequest) -> NovelProject:
         project["latest_review"] = (
             request.latest_review.dict() if request.latest_review else None
         )
+        project["character_state_updates"] = [
+            u.dict() for u in request.character_state_updates
+        ]
+        project["timeline"] = [t.dict() for t in request.timeline]
+        project["memory_facts"] = [f.dict() for f in request.memory_facts]
         project["updated_at"] = now
 
     _repository.save_project(project)

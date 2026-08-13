@@ -103,6 +103,8 @@ class ReviewerAgent(BaseAgent[ReviewResult]):
             ),
             memory=ctx.memory,
             rag_context=context,
+            memory_facts=ctx.memory_facts,
+            timeline=ctx.timeline,
         )
         data = await self._llm_json(ctx, prompt, SYSTEM_ROLE)
         return parse_review_result(data)

@@ -6,9 +6,11 @@ from app.agents.run_state import RunStore, RunTracker
 from agents_test_utils import (
     CHARACTER_SYSTEM,
     FakeRetriever,
+    MEMORY_UPDATE,
     PLAN,
     REVIEW_PASS,
     ScriptedLLM,
+    TIMELINE_UPDATE,
     sync_test,
 )
 
@@ -50,7 +52,13 @@ def test_run_tracker_records_progress_and_finish():
 @sync_test
 async def test_orchestrator_updates_tracker_through_pipeline():
     llm = ScriptedLLM(
-        json_results=[PLAN, CHARACTER_SYSTEM, REVIEW_PASS],
+        json_results=[
+            PLAN,
+            CHARACTER_SYSTEM,
+            REVIEW_PASS,
+            MEMORY_UPDATE,
+            TIMELINE_UPDATE,
+        ],
         text_results=["正文v1"],
     )
     store = RunStore()

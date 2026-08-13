@@ -183,6 +183,83 @@ class ReviewResult(BaseModel):
     revision_required: bool = False
 
 
+class StateChange(BaseModel):
+    """单条人物状态变化。"""
+
+    field: str = ""
+    action: Literal["set", "add", "remove"] = "set"
+    old: str = ""
+    new: str = ""
+    reason: str = ""
+
+
+class CharacterStateDelta(BaseModel):
+    """一个角色在章节中的状态变化集合。"""
+
+    character: str = ""
+    changes: list[StateChange] = Field(default_factory=list)
+
+
+MemoryFactCategory = Literal[
+    "character",
+    "location",
+    "world",
+    "event",
+    "relation",
+    "foreshadow",
+    "item",
+    "secret",
+    "identity",
+    "other",
+]
+
+
+class MemoryFact(BaseModel):
+    """长期记忆事实。"""
+
+    category: MemoryFactCategory = "other"
+    content: str = ""
+    importance: Literal["high", "medium", "low"] = "medium"
+    source_chapter: int = 0
+    dedup_key: str = ""
+
+
+class TimelineEntry(BaseModel):
+    """时间线条目。"""
+
+    sequence: int = 0
+    chapter_index: int = 0
+    chapter_title: str = ""
+    time_label: str = ""
+    event: str = ""
+    location: str = ""
+    characters: list[str] = Field(default_factory=list)
+
+
+class MemoryUpdate(BaseModel):
+    """MemoryAgent 输出：状态增量 + 长期事实 + 事件。"""
+
+    state_deltas: list[CharacterStateDelta] = Field(default_factory=list)
+    facts: list[MemoryFact] = Field(default_factory=list)
+    events: list[str] = Field(default_factory=list)
+
+
+class TimelineUpdate(BaseModel):
+    """TimelineAgent 输出：完整时间线 + 一致性警告。"""
+
+    entries: list[TimelineEntry] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
+class CharacterStateUpdateRecord(BaseModel):
+    """持久化的单章人物状态更新记录。"""
+
+    chapter_index: int = 0
+    chapter_title: str = ""
+    deltas: list[CharacterStateDelta] = Field(default_factory=list)
+    created_at: str = ""
+
+
 class ChapterResult(BaseModel):
     """章节写作结果（WriterAgent 输出）。"""
 
@@ -214,6 +291,11 @@ class PipelineResult(BaseModel):
     chapter: ChapterResult | None = None
     latest_review: ReviewResult | None = None
     revision_history: list[RevisionAttempt] = Field(default_factory=list)
+    character_state_updates: list[CharacterStateUpdateRecord] = Field(
+        default_factory=list
+    )
+    timeline: list[TimelineEntry] = Field(default_factory=list)
+    memory_facts: list[MemoryFact] = Field(default_factory=list)
     telemetry: dict[str, Any] = Field(default_factory=dict)
 
 
