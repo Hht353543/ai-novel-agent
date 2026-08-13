@@ -188,6 +188,10 @@ class Settings:
     project_db: Path = Path(
         os.getenv("PROJECT_DB", str(BASE_DIR / "data" / "projects.db"))
     )
+    # Agent 运行 Trace 持久化目录（进程重启后可查询）
+    traces_dir: Path = Path(
+        os.getenv("TRACES_DIR", str(BASE_DIR / "data" / "traces"))
+    )
     app_name: str = os.getenv("APP_NAME", "AI 网文作者 Agent")
     cors_origins: list[str] = [
         origin.strip()

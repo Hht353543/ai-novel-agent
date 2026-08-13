@@ -44,6 +44,7 @@ class AgentTelemetry(BaseModel):
     revision_attempts: int = 0
     duration_ms: float = 0
     steps: list[AgentStep] = Field(default_factory=list)
+    tool_calls: list[dict[str, Any]] = Field(default_factory=list)
 
 
 @dataclass
@@ -85,8 +86,15 @@ class AgentContext:
         default_factory=list
     )
     telemetry: AgentTelemetry = field(default_factory=AgentTelemetry)
+    tools: Any = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if not self.telemetry.run_id:
             self.telemetry.run_id = self.run_id
+        if self.tools is None:
+            # 延迟导入避免 tools -> context 循环依赖；
+            # 默认注册表使直接构造的 Context 也可调用工具。
+            from app.tools.registry import create_default_tool_registry
+
+            self.tools = create_default_tool_registry()

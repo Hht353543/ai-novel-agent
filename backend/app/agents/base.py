@@ -132,7 +132,9 @@ class BaseAgent(ABC, Generic[T]):
 
         cats = categories if categories is not None else default_categories()
         try:
-            return await asyncio.to_thread(self.retriever.retrieve, query, cats)
+            return await asyncio.to_thread(
+                self.retriever.retrieve, query, cats
+            )
         except Exception as exc:  # noqa: BLE001 - RAG 失败显式抛出
             raise AgentError(
                 self.name,
@@ -141,6 +143,30 @@ class BaseAgent(ABC, Generic[T]):
                 str(exc),
                 run_id=ctx.run_id,
             ) from exc
+
+    async def call_tool(self, ctx: AgentContext, name: str, **kwargs: Any) -> Any:
+        """统一工具入口：走注册表权限校验，并把调用写入遥测。"""
+
+        if ctx.tools is None:
+            raise AgentError(
+                self.name,
+                "tool",
+                "tools",
+                "未注入工具注册表",
+                run_id=ctx.run_id,
+            )
+        result = await ctx.tools.call(self.name, name, ctx, **kwargs)
+        if name == "search_knowledge":
+            ctx.telemetry.rag_calls += 1
+        ctx.telemetry.tool_calls.append(
+            {
+                "agent": self.name,
+                "tool": name,
+                "success": result.success,
+                "error_type": result.error_type,
+            }
+        )
+        return result
 
     async def _llm_json(
         self,

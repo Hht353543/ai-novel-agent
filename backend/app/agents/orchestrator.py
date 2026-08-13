@@ -31,6 +31,7 @@ from app.llm.provider import BaseLLM
 from app.rag.base import RetrievalProvider
 from app.rag.retriever import get_retriever
 from app.services.chapter_service import join_text
+from app.tools.registry import create_default_tool_registry
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +53,7 @@ class NovelOrchestrator:
         self.llm = llm or DeepSeekProvider()
         self.retriever = retriever or get_retriever()
         self.registry = registry or default_registry
+        self.tools = create_default_tool_registry()
         # 持久化回调：默认接线到 project_service.save_project；测试可注入替身
         self.persister = persister
 
@@ -62,6 +64,7 @@ class NovelOrchestrator:
             run_id=run_id,
             llm=self.llm,
             retriever=self.retriever,
+            tools=self.tools,
             **kwargs,
         )
 

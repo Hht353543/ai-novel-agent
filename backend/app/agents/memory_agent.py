@@ -130,7 +130,14 @@ class MemoryAgent(BaseAgent[MemoryUpdate]):
         if not self.llm.available:
             logger.warning("未配置 DEEPSEEK_API_KEY，Memory 返回空更新")
             return MemoryUpdate(events=["（演示事件）"])
-        context = await self._retrieve(ctx, _memory_query(ctx))
+        search = await self.call_tool(
+            ctx, "search_knowledge", query=_memory_query(ctx)
+        )
+        if not search.success:
+            raise AgentError(
+                self.name, "_run", "rag", search.message, run_id=ctx.run_id
+            )
+        context = list(search.data.get("hits") or [])
         ctx.retrieved_context = context
         plan = ctx.plan or NovelPlan()
         prompt = build_memory_prompt(
@@ -147,4 +154,16 @@ class MemoryAgent(BaseAgent[MemoryUpdate]):
         )
         data = await self._llm_json(ctx, prompt, SYSTEM_ROLE)
         update = parse_memory_update(data, ctx.current_chapter)
-        return dedup_facts(update, ctx.memory_facts)
+        update = dedup_facts(update, ctx.memory_facts)
+        # 状态增量与长期事实通过工具落库，Agent 不直接改状态
+        await self.call_tool(
+            ctx,
+            "update_character",
+            deltas=[d.dict() for d in update.state_deltas],
+        )
+        await self.call_tool(
+            ctx,
+            "save_memory",
+            facts=[f.dict() for f in update.facts],
+        )
+        return update

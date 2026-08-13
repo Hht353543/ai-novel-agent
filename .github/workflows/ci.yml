@@ -21,6 +21,8 @@ jobs:
           cache-dependency-path: backend/requirements*.txt
       - run: pip install -r requirements.txt -r requirements-dev.txt
       - run: python -m pytest
+      - name: Evaluation smoke (mock, no API key)
+        run: python -m evaluation.run --mode mock
       - run: python -m compileall -q app migrate_projects.py
 
   frontend:

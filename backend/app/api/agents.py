@@ -28,6 +28,7 @@ from app.agents.protocol import (
     WriterResponse,
 )
 from app.agents.run_state import PipelineRunState, RunTracker, run_store
+from app.traces.store import trace_store
 
 logger = logging.getLogger(__name__)
 
@@ -288,6 +289,17 @@ async def get_pipeline_run(run_id: str) -> PipelineRunState:
     """获取一次 Pipeline 运行的状态与进度。"""
     state = run_store.get(run_id)
     if state is None:
+        saved = trace_store.load(run_id)
+        if saved is not None:
+            return PipelineRunState(
+                run_id=run_id,
+                kind=str(saved.get("kind", "pipeline")),
+                status=str(saved.get("status", "COMPLETED")),
+                message=str(saved.get("message", "")),
+                start_time=str(saved.get("start_time", "")),
+                end_time=str(saved.get("end_time", "")),
+                error=saved.get("error"),
+            )
         from fastapi import HTTPException
 
         raise HTTPException(status_code=404, detail=f"运行不存在或已过期: {run_id}")
@@ -297,4 +309,20 @@ async def get_pipeline_run(run_id: str) -> PipelineRunState:
 @router.get("/runs", response_model=list[PipelineRunState])
 async def list_pipeline_runs(limit: int = 20) -> list[PipelineRunState]:
     """列出最近的 Pipeline 运行（调试用）。"""
-    return run_store.list_recent(limit=min(limit, 100))
+    recent = run_store.list_recent(limit=min(limit, 100))
+    ids = {r.run_id for r in recent}
+    for saved in trace_store.list_recent(limit=min(limit, 100)):
+        if saved["run_id"] not in ids:
+            recent.append(
+                PipelineRunState(
+                    run_id=saved["run_id"],
+                    kind=str(saved.get("kind", "pipeline")),
+                    status=str(saved.get("status", "COMPLETED")),
+                    message=str(saved.get("message", "")),
+                    start_time=str(saved.get("start_time", "")),
+                    end_time=str(saved.get("end_time", "")),
+                    error=saved.get("error"),
+                )
+            )
+    recent.sort(key=lambda s: s.start_time, reverse=True)
+    return recent[:limit]

@@ -12,6 +12,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 from app.agents.protocol import AgentErrorInfo
+from app.traces.store import trace_store
 
 RunStatus = Literal[
     "CREATED",
@@ -207,6 +208,20 @@ class RunTracker:
             error=error,
             result=result,
         )
+        # 持久化 Trace：进程重启后仍可通过 GET /runs/{run_id} 查询
+        state = self._store.get(self.run_id)
+        if state is not None:
+            trace_store.save(
+                self.run_id,
+                {
+                    "kind": state.kind,
+                    "status": state.status,
+                    "message": state.message,
+                    "start_time": state.start_time,
+                    "end_time": state.end_time,
+                    "error": error.dict() if error is not None else None,
+                },
+            )
 
 
 # 进程级单例（与生成服务保持一致的模块级实例模式）
