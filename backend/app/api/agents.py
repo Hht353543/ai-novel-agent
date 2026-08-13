@@ -1,7 +1,9 @@
 """多 Agent API 路由（新增入口，不影响现有接口）。"""
 
+import asyncio
 import logging
 import time
+import uuid
 from typing import TypeVar
 
 from fastapi import APIRouter
@@ -13,6 +15,7 @@ from app.agents.protocol import (
     AgentResponse,
     CharacterRequest,
     CharacterResponse,
+    PipelineAsyncResponse,
     PipelineRequest,
     PipelineResponse,
     PlannerRequest,
@@ -22,6 +25,7 @@ from app.agents.protocol import (
     WriterRequest,
     WriterResponse,
 )
+from app.agents.run_state import PipelineRunState, RunTracker, run_store
 
 logger = logging.getLogger(__name__)
 
@@ -174,7 +178,14 @@ async def reviewer_agent(request: ReviewRequest) -> ReviewerResponse:
 @router.post("/pipeline", response_model=PipelineResponse)
 async def pipeline_agent(request: PipelineRequest) -> PipelineResponse:
     """运行完整多 Agent Pipeline（含 Writer ↔ Reviewer 修订循环）。"""
-    result = await orchestrator.run_pipeline(request)
+    run_id = uuid.uuid4().hex
+    run_store.create(run_id)
+    tracker = RunTracker(run_store, run_id)
+    result = await orchestrator.run_pipeline(
+        request,
+        tracker=tracker,
+        run_id=run_id,
+    )
     return PipelineResponse(
         success=result.status != "error",
         status=result.status,
@@ -184,3 +195,51 @@ async def pipeline_agent(request: PipelineRequest) -> PipelineResponse:
         result=result,
         telemetry=result.telemetry,
     )
+
+
+@router.post("/pipeline/async", response_model=PipelineAsyncResponse)
+async def pipeline_agent_async(request: PipelineRequest) -> PipelineAsyncResponse:
+    """异步启动 Pipeline：立即返回 run_id，进度通过 GET /runs/{run_id} 获取。"""
+    run_id = uuid.uuid4().hex
+    run_store.create(run_id)
+    tracker = RunTracker(run_store, run_id)
+
+    async def _run() -> None:
+        try:
+            await orchestrator.run_pipeline(
+                request,
+                tracker=tracker,
+                run_id=run_id,
+            )
+        except Exception as exc:  # noqa: BLE001 - 兜底标记失败
+            from app.agents.protocol import AgentErrorInfo
+
+            tracker.finish(
+                error=AgentErrorInfo(
+                    agent="pipeline",
+                    operation="run_pipeline",
+                    error_type="unknown",
+                    message=str(exc),
+                    run_id=run_id,
+                )
+            )
+
+    asyncio.create_task(_run())
+    return PipelineAsyncResponse(run_id=run_id, status="CREATED")
+
+
+@router.get("/runs/{run_id}", response_model=PipelineRunState)
+async def get_pipeline_run(run_id: str) -> PipelineRunState:
+    """获取一次 Pipeline 运行的状态与进度。"""
+    state = run_store.get(run_id)
+    if state is None:
+        from fastapi import HTTPException
+
+        raise HTTPException(status_code=404, detail=f"运行不存在或已过期: {run_id}")
+    return state
+
+
+@router.get("/runs", response_model=list[PipelineRunState])
+async def list_pipeline_runs(limit: int = 20) -> list[PipelineRunState]:
+    """列出最近的 Pipeline 运行（调试用）。"""
+    return run_store.list_recent(limit=min(limit, 100))

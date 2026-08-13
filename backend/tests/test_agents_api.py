@@ -1,9 +1,13 @@
 """多 Agent API 集成测试（不触网）。"""
 
+import asyncio
+
 import pytest
 from fastapi.testclient import TestClient
 
 from app.agents.orchestrator import NovelOrchestrator
+from app.agents.protocol import PipelineRequest
+from app.agents.run_state import RunTracker, run_store
 from app.llm.deepseek_provider import DeepSeekProvider
 from app.llm.mock_provider import MockProvider
 from app.main import app
@@ -176,3 +180,53 @@ def test_project_roundtrip_with_agent_fields(client, tmp_path, monkeypatch):
     assert loaded["plan"]["title"] == "测试书"
     assert loaded["character_relations"][0]["relation"] == "搭档"
     assert loaded["latest_review"]["score"] == 90
+
+
+def test_pipeline_async_returns_run_id(client, monkeypatch):
+    _patch_orchestrator(monkeypatch, MockProvider())
+    run_store._runs.clear()
+    r = client.post(
+        "/api/agents/pipeline/async",
+        json={"genre": "武侠", "requirement": "10万字"},
+    )
+    assert r.status_code == 200
+    run_id = r.json()["run_id"]
+    assert r.json()["status"] == "CREATED"
+    assert run_store.get(run_id) is not None
+
+
+def test_pipeline_run_polling_contract(client, monkeypatch):
+    llm = ScriptedLLM(
+        json_results=[PLAN, CHARACTER_SYSTEM, REVIEW_PASS],
+        text_results=["正文v1"],
+    )
+    _patch_orchestrator(monkeypatch, llm)
+    run_store._runs.clear()
+    run_id = "poll-run"
+    run_store.create(run_id)
+    tracker = RunTracker(run_store, run_id)
+    asyncio.run(
+        api_agents.orchestrator.run_pipeline(
+            PipelineRequest(genre="武侠", requirement="10万字"),
+            tracker=tracker,
+            run_id=run_id,
+        )
+    )
+
+    state = client.get(f"/api/agents/runs/{run_id}").json()
+    assert state["status"] == "COMPLETED"
+    steps = [p["step"] for p in state["progress"]]
+    assert "PLANNING" in steps and "WRITING" in steps and "REVIEWING" in steps
+    assert state["result"]["chapter"]["content"] == "正文v1"
+
+
+def test_pipeline_run_404(client, monkeypatch):
+    _patch_orchestrator(monkeypatch, ScriptedLLM())
+    assert client.get("/api/agents/runs/missing").status_code == 404
+
+
+def test_pipeline_runs_list(client, monkeypatch):
+    _patch_orchestrator(monkeypatch, ScriptedLLM())
+    r = client.get("/api/agents/runs")
+    assert r.status_code == 200
+    assert isinstance(r.json(), list)

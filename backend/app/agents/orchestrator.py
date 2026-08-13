@@ -19,6 +19,7 @@ from app.agents.protocol import (
     RevisionAttempt,
 )
 from app.agents.registry import AgentRegistry, default_registry
+from app.agents.run_state import RunTracker
 from app.llm.deepseek_provider import DeepSeekProvider
 from app.llm.provider import BaseLLM
 from app.rag.base import RetrievalProvider
@@ -109,7 +110,12 @@ class NovelOrchestrator:
             )
         return "\n".join(lines)
 
-    async def run_pipeline(self, request: PipelineRequest) -> PipelineResult:
+    async def run_pipeline(
+        self,
+        request: PipelineRequest,
+        tracker: RunTracker | None = None,
+        run_id: str | None = None,
+    ) -> PipelineResult:
         """完整流程：规划 → 人物 → 写作 → 审校 → （必要时）修订循环。"""
         planner_kwargs = request.dict(
             exclude={
@@ -123,6 +129,7 @@ class NovelOrchestrator:
             }
         )
         ctx = self.new_context(
+            run_id=run_id,
             project_id=request.project_id,
             planner_request=PlannerRequest(**planner_kwargs),
             current_arc=request.volume_index,
@@ -134,9 +141,27 @@ class NovelOrchestrator:
         )
         start = time.perf_counter()
         try:
+            if tracker:
+                tracker.set(
+                    "PLANNING",
+                    agent="planner",
+                    message="正在生成小说规划",
+                    step="PLANNING",
+                )
             plan = await self.plan(ctx)
+            if tracker:
+                tracker.mark_step_done("PLANNING")
             ctx.plan = plan
+            if tracker:
+                tracker.set(
+                    "CHARACTER_DESIGN",
+                    agent="character",
+                    message="正在设计人物系统",
+                    step="CHARACTER_DESIGN",
+                )
             characters = await self.characters(ctx)
+            if tracker:
+                tracker.mark_step_done("CHARACTER_DESIGN")
             ctx.characters = characters.profiles
             ctx.character_states = characters.states
             ctx.relationships = characters.relationships
@@ -148,7 +173,16 @@ class NovelOrchestrator:
                 or f"第{request.chapter_index + 1}章"
             )
 
+            if tracker:
+                tracker.set(
+                    "WRITING",
+                    agent="writer",
+                    message=f"正在生成第 {request.chapter_index + 1} 章",
+                    step="WRITING",
+                )
             chapter = await self.write_chapter(ctx)
+            if tracker:
+                tracker.mark_step_done("WRITING")
             history: list[RevisionAttempt] = []
             latest_review: ReviewResult | None = None
             status = "demo" if not self.llm.available else "success"
@@ -160,8 +194,17 @@ class NovelOrchestrator:
             )
 
             if request.with_review:
+                if tracker:
+                    tracker.set(
+                        "REVIEWING",
+                        agent="reviewer",
+                        message="正在审校章节",
+                        step="REVIEWING",
+                    )
                 ctx.chapter_text = chapter.content
                 review = await self.review_chapter(ctx)
+                if tracker:
+                    tracker.mark_step_done("REVIEWING")
                 chapter.review = review
                 history.append(
                     RevisionAttempt(
@@ -175,13 +218,29 @@ class NovelOrchestrator:
                     not self._passed(review, ctx.config.review_pass_score)
                     and attempts <= max_revisions
                 ):
+                    if tracker:
+                        tracker.set(
+                            "REVISING",
+                            agent="writer",
+                            message=f"根据审校意见修订（第 {attempts + 1} 版）",
+                            step="REVISING",
+                        )
                     ctx.telemetry.revision_attempts += 1
                     instructions = self._revision_instructions(review)
                     ctx.revision_instructions = instructions
                     ctx.metadata["attempt"] = attempts + 1
                     chapter = await self.write_chapter(ctx)
                     ctx.chapter_text = chapter.content
+                    if tracker:
+                        tracker.set(
+                            "REVIEWING",
+                            agent="reviewer",
+                            message="正在复审修订稿",
+                            step="REVIEWING",
+                        )
                     review = await self.review_chapter(ctx)
+                    if tracker:
+                        tracker.mark_step_done("REVIEWING")
                     chapter.review = review
                     history.append(
                         RevisionAttempt(
@@ -215,6 +274,13 @@ class NovelOrchestrator:
                     )
 
             if ctx.config.memory_enabled:
+                if tracker:
+                    tracker.set(
+                        "UPDATING_MEMORY",
+                        agent="memory",
+                        message="正在更新章节记忆",
+                        step="UPDATING_MEMORY",
+                    )
                 from app.services.memory_service import update_memory
 
                 memory = await update_memory(
@@ -226,6 +292,8 @@ class NovelOrchestrator:
                 )
                 chapter.memory = memory
                 ctx.memory = memory
+                if tracker:
+                    tracker.mark_step_done("UPDATING_MEMORY")
 
             project_id = request.project_id
             if request.save or bool(request.project_id):
@@ -241,7 +309,7 @@ class NovelOrchestrator:
                 project_id = project.id
 
             ctx.telemetry.duration_ms = (time.perf_counter() - start) * 1000
-            return PipelineResult(
+            result = PipelineResult(
                 run_id=ctx.run_id,
                 project_id=project_id,
                 status=status,
@@ -253,26 +321,46 @@ class NovelOrchestrator:
                 revision_history=history,
                 telemetry=ctx.telemetry.dict(),
             )
+            if tracker:
+                tracker.finish(result=result.dict())
+            return result
         except AgentError as exc:
             ctx.telemetry.duration_ms = (time.perf_counter() - start) * 1000
             logger.error("Pipeline 失败 run_id=%s: %s", ctx.run_id, exc)
-            return PipelineResult(
+            result = PipelineResult(
                 run_id=ctx.run_id,
                 project_id=request.project_id,
                 status="error",
                 message=str(exc),
                 telemetry=ctx.telemetry.dict(),
             )
+            if tracker:
+                tracker.finish(error=exc.info, result=result.dict())
+            return result
         except Exception as exc:  # noqa: BLE001 - 显式返回错误，禁止静默
             ctx.telemetry.duration_ms = (time.perf_counter() - start) * 1000
             logger.exception("Pipeline 未预期异常 run_id=%s", ctx.run_id)
-            return PipelineResult(
+            result = PipelineResult(
                 run_id=ctx.run_id,
                 project_id=request.project_id,
                 status="error",
                 message=f"Pipeline 内部错误：{exc}",
                 telemetry=ctx.telemetry.dict(),
             )
+            if tracker:
+                from app.agents.protocol import AgentErrorInfo
+
+                tracker.finish(
+                    error=AgentErrorInfo(
+                        agent="pipeline",
+                        operation="run_pipeline",
+                        error_type="unknown",
+                        message=str(exc),
+                        run_id=ctx.run_id,
+                    ),
+                    result=result.dict(),
+                )
+            return result
 
     def _persist(
         self,

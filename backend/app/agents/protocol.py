@@ -313,6 +313,13 @@ class PipelineResponse(AgentResponse):
     result: PipelineResult | None = None
 
 
+class PipelineAsyncResponse(BaseModel):
+    """异步 Pipeline 启动响应。"""
+
+    run_id: str = ""
+    status: str = "CREATED"
+
+
 __all__ = [
     "AgentStatus",
     "AgentRequest",
@@ -341,4 +348,5 @@ __all__ = [
     "WriterResponse",
     "ReviewerResponse",
     "PipelineResponse",
+    "PipelineAsyncResponse",
 ]
