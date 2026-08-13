@@ -75,6 +75,19 @@ def save_project(request: ProjectSaveRequest) -> NovelProject:
             "chapters": [c.dict() for c in request.chapters],
             "character_cards": [c.dict() for c in request.character_cards],
             "memory": request.memory,
+            "plan": request.plan.dict() if request.plan else None,
+            "character_profiles": [
+                p.dict() for p in request.character_profiles
+            ],
+            "character_states": [
+                s.dict() for s in request.character_states
+            ],
+            "character_relations": [
+                r.dict() for r in request.character_relations
+            ],
+            "latest_review": (
+                request.latest_review.dict() if request.latest_review else None
+            ),
             "created_at": now,
             "updated_at": now,
         }
@@ -85,6 +98,19 @@ def save_project(request: ProjectSaveRequest) -> NovelProject:
         project["chapters"] = [c.dict() for c in request.chapters]
         project["character_cards"] = [c.dict() for c in request.character_cards]
         project["memory"] = request.memory
+        project["plan"] = request.plan.dict() if request.plan else None
+        project["character_profiles"] = [
+            p.dict() for p in request.character_profiles
+        ]
+        project["character_states"] = [
+            s.dict() for s in request.character_states
+        ]
+        project["character_relations"] = [
+            r.dict() for r in request.character_relations
+        ]
+        project["latest_review"] = (
+            request.latest_review.dict() if request.latest_review else None
+        )
         project["updated_at"] = now
 
     _repository.save_project(project)

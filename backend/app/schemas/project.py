@@ -4,6 +4,13 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from app.agents.protocol import (
+    CharacterProfile,
+    CharacterRelation,
+    CharacterState,
+    NovelPlan,
+    ReviewResult,
+)
 from app.schemas.character import CharacterCard
 from app.schemas.novel import NovelOutline
 
@@ -29,6 +36,21 @@ class NovelProject(BaseModel):
     )
     memory: str = Field(
         default="", description="项目级跨章记忆（事件线+角色状态滚动摘要）"
+    )
+    plan: NovelPlan | None = Field(
+        default=None, description="多 Agent 结构化小说规划（可空）"
+    )
+    character_profiles: list[CharacterProfile] = Field(
+        default_factory=list, description="多 Agent 人物档案（可空）"
+    )
+    character_states: list[CharacterState] = Field(
+        default_factory=list, description="多 Agent 人物当前状态（可空）"
+    )
+    character_relations: list[CharacterRelation] = Field(
+        default_factory=list, description="多 Agent 人物关系（可空）"
+    )
+    latest_review: ReviewResult | None = Field(
+        default=None, description="最近一次审校结果（可空）"
     )
     created_at: str = Field(default="", description="创建时间 ISO 格式")
     updated_at: str = Field(default="", description="最后保存时间 ISO 格式")
@@ -60,6 +82,19 @@ class ProjectSaveRequest(BaseModel):
     # 兼容前端可能多传的字段，忽略即可
     title: str = ""
     memory: str = Field(default="", description="项目级跨章记忆")
+    plan: NovelPlan | None = Field(default=None, description="多 Agent 规划（可空）")
+    character_profiles: list[CharacterProfile] = Field(
+        default_factory=list, description="多 Agent 人物档案（可空）"
+    )
+    character_states: list[CharacterState] = Field(
+        default_factory=list, description="多 Agent 人物状态（可空）"
+    )
+    character_relations: list[CharacterRelation] = Field(
+        default_factory=list, description="多 Agent 人物关系（可空）"
+    )
+    latest_review: ReviewResult | None = Field(
+        default=None, description="最近一次审校结果（可空）"
+    )
 
     class Config:
         """Pydantic v1 配置：忽略多余字段。"""

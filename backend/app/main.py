@@ -13,6 +13,7 @@ from openai import APIConnectionError, APIError, APITimeoutError
 
 from app.api.novel import router as novel_router
 from app.api.projects import router as projects_router
+from app.api.agents import router as agents_router
 from app.config import settings
 from app.middleware import (
     RequestLogMiddleware,
@@ -52,6 +53,7 @@ app.add_middleware(RequestLogMiddleware)
 
 app.include_router(novel_router)
 app.include_router(projects_router)
+app.include_router(agents_router)
 
 
 @app.exception_handler(Exception)

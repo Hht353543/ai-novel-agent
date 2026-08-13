@@ -27,6 +27,8 @@
 FastAPI 后端
   ├─ api/novel.py        大纲 / 章节 / 标题 / 角色卡 / 检索接口
   ├─ api/projects.py     项目保存 / 列表 / 读取 / 删除
+  ├─ api/agents.py       多 Agent 接口（plan / characters / write / review / pipeline）
+  ├─ agents/             多 Agent 层（Planner → Character → Writer → Reviewer）
   ├─ services/           业务编排（大纲、章节、标题、角色卡、项目、知识库压缩）
   ├─ prompts/            DeepSeek Prompt 模板（大纲、章节、标题、角色卡、压缩）
   ├─ rag/loader.py       按板块读取知识库 txt
@@ -56,7 +58,8 @@ ai-novel-agent/
 │   ├── app/
 │   │   ├── main.py              # FastAPI 入口
 │   │   ├── config.py            # 配置管理（.env）
-│   │   ├── api/                 # novel.py / projects.py 路由
+│   │   ├── api/                 # novel.py / projects.py / agents.py 路由
+│   │   ├── agents/              # 多 Agent 层（协议 / Context / Agent / 编排器）
 │   │   ├── rag/loader.py        # 知识库板块读取
 │   │   ├── llm/deepseek.py      # DeepSeek 调用封装
 │   │   ├── prompts/             # 各生成环节 Prompt 模板
@@ -67,7 +70,8 @@ ai-novel-agent/
 │   ├── requirements.txt
 │   └── .env.example
 ├── frontend/                    # Vue3 + Vite + TypeScript
-├── agents/                      # 第二阶段多 Agent 扩展占位
+├── agents/                      # 多 Agent 占位说明（实现位于 backend/app/agents/）
+├── docs/                        # 架构 / 集成 / 多 Agent 文档
 ├── docker/                      # Dockerfile 与 docker-compose.yml
 └── README.md
 ```
@@ -339,19 +343,20 @@ compose 已挂载 `../backend/knowledge`（知识库）与 `../backend/data`（�
 
 `.env` 已被 `.gitignore` 忽略，不会进入 Git；请勿把真实 Key 提交到仓库。
 
-## 第二阶段规划：多 Agent 扩展
+## 多 Agent 扩展（第二阶段）
 
-`agents/` 已预留，未来计划：
+多 Agent 小说创作系统已实现，新增入口（不改变原有接口）：
 
-```text
-agents/
-├── planner_agent.py     # 大纲规划 Agent
-├── character_agent.py   # 人物设计 Agent
-├── writer_agent.py      # 章节写作 Agent
-└── reviewer_agent.py    # 质量审校 Agent
-```
+- `POST /api/agents/plan`：Planner Agent 生成结构化小说规划；
+- `POST /api/agents/characters`：Character Agent 建立人物系统（档案 + 状态 + 关系）；
+- `POST /api/agents/write`：Writer Agent 生成章节正文；
+- `POST /api/agents/review`：Reviewer Agent 审校章节；
+- `POST /api/agents/pipeline`：完整流程（规划 → 人物 → 写作 → 审校 → 必要时修订循环）。
 
-当前 `NovelService` 等业务服务已按编排入口设计，第二阶段可复用现有 RAG / LLM / 存储基础设施。
+未配置 API Key 时全部返回演示结果；审校失败默认最多修订 2 次（`AGENT_MAX_REVISIONS`），
+达到上限返回最高分版本并显式标记 `revision_exhausted`。
+
+详细说明见 [docs/multi-agent.md](docs/multi-agent.md)、[docs/architecture.md](docs/architecture.md)、[docs/integration.md](docs/integration.md)。
 
 ## License
 

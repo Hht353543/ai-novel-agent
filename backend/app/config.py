@@ -134,6 +134,12 @@ class Settings:
         "yes",
     )
 
+    # ---------- 多 Agent ----------
+    # Pipeline 中审校失败后的最大修订次数（禁止无限循环）
+    agent_max_revisions: int = int(os.getenv("AGENT_MAX_REVISIONS", "2"))
+    # Reviewer 通过分数阈值（0-100）
+    review_pass_score: int = int(os.getenv("REVIEW_PASS_SCORE", "80"))
+
     # ---------- 大纲卷章规划 ----------
     # 每章标准字数：总章数 = ceil(总字数 / 每章字数)
     outline_chapter_words: int = int(os.getenv("OUTLINE_CHAPTER_WORDS", "4000"))
